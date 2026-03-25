@@ -1,0 +1,17 @@
+[project]
+name = "korean-sentence-platform"
+version = "0.1.0"
+description = "Modular monolith Korean sentence recommendation platform with FastAPI and Streamlit"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.3.0",
+  "httpx>=0.27.0",
+  "streamlit>=1.38.0"
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
