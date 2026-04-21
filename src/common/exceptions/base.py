@@ -1,10 +1,42 @@
+from __future__ import annotations
+
+
 class AppError(Exception):
     """Base application exception."""
 
+    status_code: int = 500
+    error_code: str = "internal_error"
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message or self.__class__.__name__)
+        self.message = message or self.__class__.__name__
+
 
 class NotFoundError(AppError):
-    """Raised when an entity cannot be found."""
+    status_code = 404
+    error_code = "not_found"
 
 
 class ValidationError(AppError):
-    """Raised when application validation fails."""
+    status_code = 422
+    error_code = "validation_error"
+
+
+class UnauthorizedError(AppError):
+    status_code = 401
+    error_code = "unauthorized"
+
+
+class ForbiddenError(AppError):
+    status_code = 403
+    error_code = "forbidden"
+
+
+class ConflictError(AppError):
+    status_code = 409
+    error_code = "conflict"
+
+
+class RateLimitedError(AppError):
+    status_code = 429
+    error_code = "rate_limited"

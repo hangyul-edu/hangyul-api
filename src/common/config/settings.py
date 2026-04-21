@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     api_base_url: str = "http://127.0.0.1:8000"
     use_mock_ai: bool = True
 
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_ttl_minutes: int = 30
+    refresh_token_ttl_days: int = 30
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

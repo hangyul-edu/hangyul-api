@@ -1,9 +1,74 @@
-from fastapi import APIRouter, Depends
+from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, UploadFile, File, status
+
+from src.common.security.auth import CurrentUser, get_current_user
 from src.modules.recommendations.infrastructure.container import AppContainer, get_container
-from src.modules.users.presentation.schemas import FeedbackRequest, FeedbackResponse, UserProfileResponse
+from src.modules.users.presentation.schemas import (
+    AvatarUploadResponse,
+    FeedbackRequest,
+    FeedbackResponse,
+    MeResponse,
+    NicknameCheckRequest,
+    NicknameCheckResponse,
+    UpdateMeRequest,
+    UserProfileResponse,
+    UserSearchResult,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/me", response_model=MeResponse, summary="Get authenticated user profile")
+def get_me(user: CurrentUser = Depends(get_current_user)) -> MeResponse:
+    return MeResponse(
+        user_id=user.user_id,
+        email="student@example.com",
+        nickname="한글러",
+        avatar_url=None,
+        phone_verified=True,
+        language="ko",
+        learning_language="ko",
+        tier="green",
+        points=0,
+        streak_days=0,
+        subscription_active=False,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@router.patch("/me", response_model=MeResponse, summary="Update authenticated user profile")
+def update_me(payload: UpdateMeRequest, user: CurrentUser = Depends(get_current_user)) -> MeResponse:
+    return get_me(user)
+
+
+@router.post(
+    "/me/avatar",
+    response_model=AvatarUploadResponse,
+    summary="Upload profile avatar image",
+)
+def upload_avatar(file: UploadFile = File(...), user: CurrentUser = Depends(get_current_user)) -> AvatarUploadResponse:
+    return AvatarUploadResponse(avatar_url=f"https://cdn.example.com/avatars/{user.user_id}.png")
+
+
+@router.post(
+    "/check-nickname",
+    response_model=NicknameCheckResponse,
+    summary="Check whether a nickname is available",
+)
+def check_nickname(payload: NicknameCheckRequest) -> NicknameCheckResponse:
+    return NicknameCheckResponse(nickname=payload.nickname, available=True)
+
+
+@router.get(
+    "/search",
+    response_model=list[UserSearchResult],
+    summary="Search users by friend code or nickname",
+)
+def search_users(code: str | None = None, nickname: str | None = None, user: CurrentUser = Depends(get_current_user)) -> list[UserSearchResult]:
+    return []
 
 
 @router.get("/{user_id}/profile", response_model=UserProfileResponse)
