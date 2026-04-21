@@ -24,9 +24,6 @@ def get_questions() -> OnboardingQuestionsResponse:
                 options=[
                     OnboardingOption(code="conversation", label="일상 회화"),
                     OnboardingOption(code="topik", label="TOPIK 시험"),
-                    OnboardingOption(code="business", label="비즈니스"),
-                    OnboardingOption(code="travel", label="여행"),
-                    OnboardingOption(code="culture", label="문화/K-콘텐츠"),
                 ],
             ),
             OnboardingQuestion(

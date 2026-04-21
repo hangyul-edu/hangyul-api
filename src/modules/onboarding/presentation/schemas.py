@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-LearningPurpose = Literal["conversation", "topik", "business", "travel", "culture"]
+LearningPurpose = Literal["conversation", "topik"]
 SpeakingLevel = Literal["beginner", "elementary", "intermediate", "advanced", "fluent"]
 TopikTarget = Literal["none", "1", "2", "3", "4", "5", "6"]
 

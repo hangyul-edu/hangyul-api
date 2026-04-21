@@ -19,6 +19,7 @@ class SentenceExample(BaseModel):
 
 class Sentence(BaseModel):
     sentence_id: str
+    track_id: str = Field(description="Owning category: trk_conversation or trk_topik.")
     korean: str
     romanization: str | None = None
     translation: str

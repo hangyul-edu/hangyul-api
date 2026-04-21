@@ -5,8 +5,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-TrackKind = Literal["topik", "conversation", "business", "travel", "culture"]
+TrackKind = Literal["topik", "conversation"]
+ProgressionKind = Literal["lectures", "sentences"]
 LectureKind = Literal["video", "reading", "listening"]
+
+
+class ProgressionInfo(BaseModel):
+    kind: ProgressionKind
+    total_levels: int
+    level_label_prefix: str = "학습 레벨"
 
 
 class Track(BaseModel):
@@ -14,9 +21,7 @@ class Track(BaseModel):
     kind: TrackKind
     name: str
     description: str | None = None
-    total_levels: int
-    enrolled: bool = False
-    progress_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    progressions: list[ProgressionInfo]
 
 
 class TracksResponse(BaseModel):
@@ -25,6 +30,7 @@ class TracksResponse(BaseModel):
 
 class Level(BaseModel):
     track_id: str
+    kind: ProgressionKind
     level: int
     label: str
     unlocked: bool = False
@@ -37,10 +43,26 @@ class LevelsResponse(BaseModel):
     items: list[Level]
 
 
-class EnrollResponse(BaseModel):
+class MyProgressionState(BaseModel):
     track_id: str
-    enrolled: bool
-    current_level: int
+    kind: ProgressionKind
+    current_level: int = Field(ge=1)
+    total_levels: int
+
+
+class MyLearningState(BaseModel):
+    progressions: list[MyProgressionState]
+    topik_target_grade: int | None = Field(
+        default=None, ge=1, le=6, description="Only set when the user enrolled into TOPIK at onboarding."
+    )
+
+
+class UpdateCurrentLevelRequest(BaseModel):
+    current_level: int = Field(ge=1)
+
+
+class UpdateTopikTargetRequest(BaseModel):
+    target_grade: int = Field(ge=1, le=6)
 
 
 class Lecture(BaseModel):

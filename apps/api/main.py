@@ -12,6 +12,7 @@ from src.modules.gamification.presentation.router import leagues_router, points_
 from src.modules.learning.presentation.router import (
     lectures_router,
     learning_router,
+    me_learning_router,
     tracks_router,
 )
 from src.modules.legal.presentation.router import router as legal_router
@@ -89,6 +90,7 @@ app.include_router(dashboard_router)
 app.include_router(tracks_router)
 app.include_router(learning_router)
 app.include_router(lectures_router)
+app.include_router(me_learning_router)
 app.include_router(sentences_router)
 app.include_router(quizzes_router)
 app.include_router(writing_router)
