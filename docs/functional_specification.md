@@ -356,7 +356,45 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 
 ### 4.11 Gamification — points, leagues, seasons (`gamification`)
 
-**Screens:** points balance · current league tier (Green → Lime → Yellow → Orange) · 2026 Spring Season leaderboard · past seasons.
+**Screens:** points balance · points-earning history · my group leaderboard (30 users) · my league tier · past seasons · end-of-season result banner (promote / maintain / demote).
+
+**Tiers**
+
+Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Each tier auto-splits into **groups of 30 users** matched by activity level (e.g. a tier holding 300 users has 10 groups). Rankings are computed **per group**, not per tier.
+
+| Tier | Group size | Promotion | Demotion |
+|---|---|---|---|
+| Green | 30 | ✓ | ✗ (floor) |
+| Lime | 30 | ✓ | ✓ |
+| Yellow | 30 | ✓ | ✓ |
+| Orange | 30 | ✓ | ✓ |
+| Golden | 30 | ✗ (ceiling) | ✓ |
+
+**Seasons**
+
+- Each season lasts **one week**: Monday 00:00 → Sunday 21:00.
+- `season_id` uses an ISO-week label (e.g. `2026-W17`).
+- Season end triggers, in order: (1) final ranking, (2) promote / maintain / demote, (3) points reset to 0 at the start of the next season.
+
+**Promotion / demotion bands (per group of 30)**
+
+- **Top 20 %** — ranks 1–6 → promote.
+- **Middle 60 %** — ranks 7–24 → maintain.
+- **Bottom 20 %** — ranks 25–30 → demote.
+- Green never demotes; Golden never promotes.
+
+**Points earning**
+
+| Action | Points |
+|---|---|
+| Daily attendance | 5 |
+| 7-day attendance streak bonus | +10 |
+| Sentence completed | 10 per sentence (e.g. 5-sentence course → 50, 20-sentence course → 200) |
+| Lecture completed | 100 |
+| Saved-sentence review completed | 5 |
+
+- All points accumulate during the week; resets at season start.
+- Tie-break: most recent activity wins (higher `last_activity_at` ranks first).
 
 **Endpoints**
 
@@ -364,17 +402,18 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 |---|---|
 | `GET /points/me` | Balance (total / weekly / season) |
 | `GET /points/history` | Points-earning events |
-| `GET /leagues/me` | Current tier, rank, promotion thresholds |
-| `GET /leagues/current` | Active season metadata |
-| `GET /leagues/current/rankings` | Live leaderboard |
+| `GET /leagues/me` | My current tier, group, rank, and promote/demote cutoffs |
+| `GET /leagues/current` | Active weekly season metadata |
+| `GET /leagues/current/rankings` | Live leaderboard of my current group |
+| `GET /leagues/current/groups/{group_id}/rankings` | Leaderboard for a specific group (e.g. a friend's) |
 | `GET /leagues/seasons` | Past seasons |
-| `GET /leagues/seasons/{id}/rankings` | Frozen leaderboard |
+| `GET /leagues/seasons/{season_id}/rankings` | Frozen leaderboard of my group for that season |
 
 **Business rules**
 
-- Seasons last roughly one quarter (configurable).
-- Promotion when `season_points >= promotion_threshold`; demotion when below `demotion_threshold` at season close.
-- Leaderboards are eventually consistent (≤ 60 s lag).
+- Rankings update in real time; a few seconds of lag is acceptable.
+- At season close, `RankingEntry.outcome` is set to `promote` / `maintain` / `demote` per the bands above.
+- Group assignment is stable within a season and recomputed at season start.
 
 ---
 
@@ -558,6 +597,7 @@ pending ──cancel──▶ canceled
 | **Quiz** | MCQ / fill-blank / typing / ordering / listening. |
 | **Attempt** | A single submitted answer on a quiz. |
 | **Streak** | Consecutive days the user hit their daily goal. |
-| **Tier** | League position: Green → Lime → Yellow → Orange. |
-| **Season** | Quarterly cycle with frozen final standings. |
+| **Tier** | League position: Green → Lime → Yellow → Orange → Golden. |
+| **Group** | Set of 30 users inside a tier, matched by activity level; rankings are scoped to groups. |
+| **Season** | Weekly cycle (Mon 00:00 → Sun 21:00) that closes with promote / maintain / demote and a point reset. |
 | **HangulAI (한글AI)** | On-demand AI conversation partner. |
