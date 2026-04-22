@@ -389,9 +389,10 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 **Seasons**
 
-- Each season lasts **one week**: Monday 00:00 → Sunday 21:00.
-- `season_id` uses an ISO-week label (e.g. `2026-W17`).
+- Each season lasts **one week** in **US Eastern Time (America/New_York, Washington D.C. reference)**: Monday 00:00 ET → Sunday 21:00 ET. The boundary follows US DST automatically (EST / EDT).
+- `season_id` uses the ISO-week label computed in America/New_York (e.g. `2026-W17`).
 - Season end triggers, in order: (1) final ranking, (2) promote / maintain / demote, (3) points reset to 0 at the start of the next season.
+- Client displays may localize the window to the user's device timezone, but all server decisions (season boundaries, scheduled jobs, tie-break clocks) are anchored to America/New_York.
 
 **Promotion / demotion bands (per group of 30)**
 
@@ -645,5 +646,5 @@ Manual changes work in either direction. There is no automatic demotion, but eve
 | **Streak** | Consecutive days the user hit their daily goal. |
 | **Tier** | League position: Green → Lime → Yellow → Orange → Golden. |
 | **Group** | Set of 30 users inside a tier, matched by activity level; rankings are scoped to groups. |
-| **Season** | Weekly cycle (Mon 00:00 → Sun 21:00) that closes with promote / maintain / demote and a point reset. |
+| **Season** | Weekly cycle in US Eastern Time (Mon 00:00 ET → Sun 21:00 ET) that closes with promote / maintain / demote and a point reset. |
 | **HangulAI (한글AI)** | On-demand AI conversation partner. |
