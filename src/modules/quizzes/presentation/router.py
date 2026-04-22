@@ -11,10 +11,12 @@ from src.modules.quizzes.presentation.schemas import (
     QuizAttemptRequest,
     QuizAttemptResponse,
     QuizAttemptsResponse,
+    QuizBookmarkResponse,
     QuizDailySetResponse,
     QuizListResponse,
     QuizQuestion,
     QuizType,
+    SavedQuizSort,
 )
 
 router = APIRouter(prefix="/quizzes", tags=["quizzes"])
@@ -42,6 +44,48 @@ def list_my_attempts(
     user: CurrentUser = Depends(get_current_user),
 ) -> QuizAttemptsResponse:
     return QuizAttemptsResponse(items=[], total_attempts=0, total_correct=0)
+
+
+@router.get(
+    "/bookmarks",
+    response_model=QuizListResponse,
+    summary="List saved (bookmarked) questions for the saved-list screen",
+    description=(
+        "Returns every question the caller saved. Each item carries full per-user history "
+        "(bookmarked, saved_at, attempt_count, incorrect_count, ever_answered_correctly, "
+        "last_attempted_at, last_reviewed_at). Sort options: `recent` (default, saved_at desc), "
+        "`most_incorrect` (incorrect_count desc — works even for items the user has never gotten "
+        "right), `longest_not_reviewed` (last_reviewed_at asc, null first)."
+    ),
+)
+def list_quiz_bookmarks(
+    sort: SavedQuizSort = Query("recent"),
+    cursor: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    user: CurrentUser = Depends(get_current_user),
+) -> QuizListResponse:
+    return QuizListResponse(items=[], total=0)
+
+
+@router.post(
+    "/{quiz_id}/bookmark",
+    response_model=QuizBookmarkResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Save a question to the saved list",
+)
+def bookmark_quiz(
+    quiz_id: str, user: CurrentUser = Depends(get_current_user)
+) -> QuizBookmarkResponse:
+    return QuizBookmarkResponse(quiz_id=quiz_id, bookmarked=True)
+
+
+@router.delete(
+    "/{quiz_id}/bookmark",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a question from the saved list (idempotent 204)",
+)
+def unbookmark_quiz(quiz_id: str, user: CurrentUser = Depends(get_current_user)) -> None:
+    return None
 
 
 @router.get("/{quiz_id}", response_model=QuizQuestion, summary="Get a specific quiz question")

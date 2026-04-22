@@ -85,13 +85,23 @@ class Sentence(BaseModel):
             "not saved. Populated on every response that carries a saved sentence."
         ),
     )
+    attempt_count: int = Field(
+        default=0,
+        ge=0,
+        description="Total number of speech-attempts the caller has made on this sentence.",
+    )
     incorrect_count: int = Field(
         default=0,
         ge=0,
         description=(
-            "Number of times the user got this sentence wrong on speech-attempts. Used to power the "
+            "Number of times the user got this sentence wrong on speech-attempts. Stored "
+            "regardless of whether they ever answered correctly. Powers the "
             "'most frequently answered incorrectly' sort on the saved list."
         ),
+    )
+    ever_answered_correctly: bool = Field(
+        default=False,
+        description="True if the user has produced at least one `correct=true` speech-attempt on this sentence.",
     )
     last_reviewed_at: datetime | None = Field(
         default=None,

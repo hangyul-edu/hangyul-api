@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from src.common.api.progress import DailyProgress
 
 QuizType = Literal["multiple_choice", "fill_blank", "typing", "ordering", "listening"]
+SavedQuizSort = Literal["recent", "most_incorrect", "longest_not_reviewed"]
 
 
 class QuizChoice(BaseModel):
@@ -24,6 +25,41 @@ class QuizQuestion(BaseModel):
     choices: list[QuizChoice] = Field(default_factory=list)
     hint: str | None = None
     level: int = Field(ge=1, le=10)
+
+    # Per-user history — stored on every item the caller has ever seen, regardless of whether
+    # they've ever answered it correctly.
+    bookmarked: bool = False
+    saved_at: datetime | None = Field(
+        default=None,
+        description="When the user saved the question via POST /quizzes/{quiz_id}/bookmark.",
+    )
+    attempt_count: int = Field(
+        default=0, ge=0, description="Total attempts the caller has made on this question."
+    )
+    incorrect_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of times the caller answered this question incorrectly. Kept even if they have "
+            "never answered it correctly — it's the primary signal for 'review questions I keep "
+            "missing' lists."
+        ),
+    )
+    ever_answered_correctly: bool = Field(
+        default=False, description="True if the caller has ever submitted a correct answer."
+    )
+    last_attempted_at: datetime | None = Field(
+        default=None, description="Timestamp of the most recent attempt on this question by the caller."
+    )
+    last_reviewed_at: datetime | None = Field(
+        default=None,
+        description="Timestamp of the most recent review event (attempt or re-open from the saved list).",
+    )
+
+
+class QuizBookmarkResponse(BaseModel):
+    quiz_id: str
+    bookmarked: bool
 
 
 class QuizDailySetResponse(BaseModel):
