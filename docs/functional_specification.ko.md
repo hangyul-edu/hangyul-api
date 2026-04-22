@@ -346,6 +346,21 @@
 - 강의는 보조 콘텐츠이며 자동 승급에는 영향을 주지 않는다.
 - 각 `Lecture`는 `access ∈ {"free", "premium"}`을 가진다. 무료 회원도 목록과 메타데이터는 볼 수 있지만, 재생은 `access="free"` 강의에 한한다. 유료 강의에 대해 `GET /lectures/{lecture_id}/video`를 호출하면 비프리미엄 회원에게는 `402 subscription_required`가 반환된다. 프리미엄·체험 회원(`membership.is_premium=true`)은 모든 강의를 재생할 수 있다.
 
+**레슨 중 팝업**
+
+모든 `Lecture`는 `popups[]` 스케줄을 포함한다. 재생 중 지정된 시점에 모달로 띄우는 상호작용이며, 두 종류가 있다:
+
+| `kind` | 모달 내용 | 제출 경로 |
+|---|---|---|
+| `conversation_speak` | `sentence_id`가 가리키는 문장을 사용자에게 보여주고 소리 내어 읽게 한다. 녹음한 오디오를 발음 평가로 업로드. | `POST /sentences/{sentence_id}/speech-attempts`(§4.7 참조) — 서버가 `correct`, `transcription`, `pronunciation_score` 반환. |
+| `topik_question` | `quiz_id`가 가리키는 TOPIK 문제를 출제. | `POST /quizzes/{quiz_id}/attempts`(§4.8 참조) — 오답 시 강의 외부와 동일하게 챗봇 아이콘 CTA가 뜬다. |
+
+각 팝업은 분석용 고유 `popup_id`와 `at_second`(재생 오프셋)를 가진다. 목록은 `at_second` 오름차순이다.
+
+**"Exclude Speaking" 토글**
+
+레슨 화면 상단에는 `AppSettings.exclude_speaking`(§4.17 참조)에 연결된 "Exclude Speaking" 토글이 있다. 기본값은 **꺼짐(off)**. 사용자가 켜면(예: 소리 내기 곤란한 상황) 클라이언트는 이후 `kind="conversation_speak"` 팝업을 모두 숨긴다. `kind="topik_question"` 팝업은 토글과 무관하게 계속 노출된다. 서버는 전체 팝업 리스트를 그대로 반환하며, 필터링은 클라이언트에서 수행해 토글 변경 시 즉시 반영된다.
+
 ---
 
 ### 4.7 문장 학습 (`sentences`)
@@ -673,7 +688,7 @@
 
 ### 4.17 앱 설정 (`settings`)
 
-**화면:** 언어 · 테마 · 오디오 · 진동 · 로마자 표기 · 일일 목표(회화 문장 수 + TOPIK 문제 수) · 활성 트랙 · 트랙별 현재 레벨.
+**화면:** 언어 · 테마 · 오디오 · 진동 · 로마자 표기 · "Exclude Speaking" 토글(레슨 화면 상단과 동기화) · 일일 목표(회화 문장 수 + TOPIK 문제 수) · 활성 트랙 · 트랙별 현재 레벨.
 
 **일일 목표**
 
@@ -700,6 +715,7 @@
 **비즈니스 규칙**
 
 - 언어 변경은 `users.language`에 자동 반영.
+- `exclude_speaking`의 기본값은 `false`. 플래그는 레슨 중 팝업의 클라이언트 렌더링에만 영향을 주며(§4.6 참조), 서버는 필터링하지 않은 전체 팝업 목록을 반환한다.
 - `daily_sentence_goal`, `daily_question_goal`은 `5 / 10 / 20 / 30 / 40` 중 하나여야 한다. 그 외 값은 `422 validation_error`.
 - `achieved=true`는 `current >= target`일 때 래치되며, 이후 같은 날에 재조회해도 다시 false로 돌아가지 않는다.
 - 레벨 수동 변경은 `PATCH /me/learning/{track_id}`로 위임된다. 사용자는 자유롭게 위·아래로 변경할 수 있으며, 변경 시 **해당 트랙의 진행 중인 승급 진행도가 초기화**되어 자동 승급이 새 레벨에서 처음부터 재평가된다(4.6 참조).

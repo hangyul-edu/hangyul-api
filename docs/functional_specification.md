@@ -346,6 +346,21 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 - Lectures are optional content and do not affect auto-promotion.
 - Each `Lecture` carries `access ∈ {"free", "premium"}`. Free members can list all lectures and see metadata but only play `access="free"` ones. `GET /lectures/{lecture_id}/video` returns `402 subscription_required` for a non-premium caller requesting a `premium` lecture; premium/trial callers (`membership.is_premium=true`) play anything.
 
+**In-lesson popups**
+
+Every `Lecture` carries a `popups[]` schedule — modal interactions that fire at fixed offsets during playback. Two kinds exist:
+
+| `kind` | Modal content | Submission path |
+|---|---|---|
+| `conversation_speak` | Shows a sentence (referenced by `sentence_id`) that the user reads aloud. The modal records the user's speech and uploads it for pronunciation evaluation. | `POST /sentences/{sentence_id}/speech-attempts` (see §4.7) — server returns `correct`, `transcription`, and `pronunciation_score`. |
+| `topik_question` | Shows a TOPIK question (referenced by `quiz_id`). | `POST /quizzes/{quiz_id}/attempts` (see §4.8) — wrong answers surface the chatbot-icon CTA the same way as outside lectures. |
+
+Each popup has a stable `popup_id` for analytics and a `at_second` offset. The list is ordered by `at_second`.
+
+**"Exclude Speaking" toggle**
+
+The top of the lesson screen shows an "Exclude Speaking" toggle bound to `AppSettings.exclude_speaking` (see §4.17). It defaults to **off**. When the user flips it on (e.g. they are somewhere they can't speak aloud), the client suppresses every `kind="conversation_speak"` popup for the rest of the lesson. `kind="topik_question"` popups continue to fire regardless. The server returns the full popup list; filtering happens client-side so the toggle reacts immediately without a refetch.
+
 ---
 
 ### 4.7 Sentence study (`sentences`)
@@ -673,7 +688,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 ### 4.17 App settings (`settings`)
 
-**Screens:** language · theme · audio · vibration · romanization · daily goals (Conversation sentences + TOPIK questions) · active track · current level per track.
+**Screens:** language · theme · audio · vibration · romanization · "Exclude Speaking" toggle (mirrored on the lesson screen) · daily goals (Conversation sentences + TOPIK questions) · active track · current level per track.
 
 **Daily goals**
 
@@ -700,6 +715,7 @@ Users view progress via `GET /dashboard/summary`; `goals[]` reports `current`, `
 **Business rules**
 
 - Language change is propagated to `users.language` automatically.
+- `exclude_speaking` defaults to `false`. Flipping it only affects client-side popup rendering during lessons (see §4.6); the server returns the unfiltered popup list.
 - `daily_sentence_goal` and `daily_question_goal` must be one of `5 / 10 / 20 / 30 / 40`. Any other value returns `422 validation_error`.
 - `achieved=true` latches when `current >= target` and stays true for the rest of the day; it does not flip back even if the client re-fetches after further study.
 - Manual level changes delegate to `PATCH /me/learning/{track_id}`. Users may move up or down freely. Any such change **resets the in-flight promotion progress** on that track, so auto-promotion re-evaluates from scratch at the new level (see 4.6).
