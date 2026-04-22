@@ -27,12 +27,22 @@ class RecommendationResponseSchema(BaseModel):
 
 class SentenceRecommendationRequest(BaseModel):
     level: int | None = Field(
-        default=None, ge=1, le=10, description="Defaults to the caller's Conversation current_level."
+        default=None,
+        ge=1,
+        le=10,
+        description=(
+            "Target difficulty (Conversation scale 1..10). Always applied. Defaults to the caller's "
+            "Conversation current_level if omitted; should normally match the current level."
+        ),
     )
     prompt: str | None = Field(
         default=None,
         max_length=500,
-        description="Free-form prompt — e.g. 'sentences I can use when ordering food'.",
+        description=(
+            "Optional refinement typed by the user in the on-screen prompt input — e.g. "
+            "'sentences I can use when ordering food'. Narrows topic/scenario WITHIN `level`; "
+            "it does not override the level."
+        ),
     )
     count: int = Field(default=5, ge=1, le=20)
 
@@ -46,12 +56,22 @@ class SentenceRecommendationResponse(BaseModel):
 
 class QuestionRecommendationRequest(BaseModel):
     level: int | None = Field(
-        default=None, ge=1, le=6, description="Defaults to the caller's TOPIK current_level (1..6)."
+        default=None,
+        ge=1,
+        le=6,
+        description=(
+            "Target TOPIK 급수 (1..6). Always applied. Defaults to the caller's TOPIK current_level "
+            "if omitted; should normally match the current level."
+        ),
     )
     prompt: str | None = Field(
         default=None,
         max_length=500,
-        description="Free-form prompt — e.g. 'TOPIK 4급 피동 문법 문제'.",
+        description=(
+            "Optional refinement typed by the user in the on-screen prompt input — e.g. "
+            "'피동 grammar questions'. Narrows topic/scenario WITHIN `level`; it does not override "
+            "the level."
+        ),
     )
     count: int = Field(default=5, ge=1, le=20)
 

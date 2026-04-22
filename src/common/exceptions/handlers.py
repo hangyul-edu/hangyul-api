@@ -48,6 +48,13 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = []
+        for err in exc.errors():
+            safe = dict(err)
+            ctx = safe.get("ctx")
+            if isinstance(ctx, dict):
+                safe["ctx"] = {k: (str(v) if isinstance(v, Exception) else v) for k, v in ctx.items()}
+            errors.append(safe)
         return JSONResponse(
             status_code=422,
             content={
@@ -58,6 +65,6 @@ def register_exception_handlers(app: FastAPI) -> None:
                     detail="One or more fields failed validation.",
                     instance=str(request.url.path),
                 ),
-                "errors": exc.errors(),
+                "errors": errors,
             },
         )

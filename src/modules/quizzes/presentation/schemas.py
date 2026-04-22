@@ -47,14 +47,10 @@ class QuizAttemptResponse(BaseModel):
     explanation: str | None = None
     xp_earned: int
     submitted_at: datetime
-    chatbot_conversation_id: str | None = Field(
-        default=None,
-        description=(
-            "Set when the answer was incorrect on a TOPIK quiz — the server pre-seeded an AI-chat "
-            "conversation with the question, the user's answer, and the correct answer. The client "
-            "opens /ai/conversations/{id}/messages to read the explanation."
-        ),
-    )
+    # No pre-built chatbot conversation: when the attempt is wrong, the client
+    # shows a chatbot-icon CTA offering an explanation. Only on user tap does the
+    # client call POST /ai/conversations with context.kind="quiz_attempt",
+    # attempt_id=..., reason="explain_mistake", auto_assistant_reply=true.
 
 
 class QuizAttempt(BaseModel):

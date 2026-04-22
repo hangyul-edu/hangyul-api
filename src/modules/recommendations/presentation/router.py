@@ -47,7 +47,7 @@ def create_recommendation(
     "/sentences",
     response_model=SentenceRecommendationResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Recommend Conversation-track sentences (level-based or prompt-driven)",
+    summary="Generate Conversation-track sentences at the caller's current level (optional prompt refinement)",
 )
 def recommend_sentences(
     payload: SentenceRecommendationRequest,
@@ -61,7 +61,7 @@ def recommend_sentences(
     "/questions",
     response_model=QuestionRecommendationResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Recommend TOPIK-track questions (level-based or prompt-driven)",
+    summary="Generate TOPIK-track questions at the caller's current level (optional prompt refinement)",
 )
 def recommend_questions(
     payload: QuestionRecommendationRequest,
