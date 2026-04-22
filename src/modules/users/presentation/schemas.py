@@ -31,6 +31,14 @@ class MeResponse(BaseModel):
     email: EmailStr
     nickname: str
     avatar_url: str | None = None
+    avatar_source: Literal["uploaded", "default", "none"] = Field(
+        default="none",
+        description="How `avatar_url` was set: uploaded photo, picked default character, or not set yet.",
+    )
+    default_avatar_id: str | None = Field(
+        default=None,
+        description="Populated when avatar_source == 'default'; references the picked DefaultAvatar.",
+    )
     phone_verified: bool = False
     language: str = Field(default="ko", description="BCP-47 code for UI language")
     learning_language: str = "ko"
@@ -56,8 +64,31 @@ class NicknameCheckResponse(BaseModel):
     available: bool
 
 
-class AvatarUploadResponse(BaseModel):
+AvatarSource = Literal["uploaded", "default"]
+
+
+class AvatarResponse(BaseModel):
     avatar_url: str
+    source: AvatarSource = Field(description="How the current avatar was chosen.")
+    default_avatar_id: str | None = Field(
+        default=None,
+        description="Populated when `source == 'default'`; references the picked DefaultAvatar.",
+    )
+
+
+class DefaultAvatar(BaseModel):
+    default_avatar_id: str = Field(description="Stable catalog id, e.g. 'dav_tangerine_01'.")
+    name: str = Field(description="Human-readable label shown under the tile.")
+    image_url: str = Field(description="CDN URL of the character image.")
+    order: int = 0
+
+
+class DefaultAvatarsResponse(BaseModel):
+    items: list[DefaultAvatar]
+
+
+class SelectDefaultAvatarRequest(BaseModel):
+    default_avatar_id: str
 
 
 class UserSearchResult(BaseModel):

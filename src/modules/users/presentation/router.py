@@ -6,17 +6,43 @@ from fastapi import APIRouter, Depends, UploadFile, File, status
 
 from src.common.security.auth import CurrentUser, get_current_user
 from src.modules.recommendations.infrastructure.container import AppContainer, get_container
+from src.common.exceptions import NotFoundError
 from src.modules.users.presentation.schemas import (
-    AvatarUploadResponse,
+    AvatarResponse,
+    DefaultAvatar,
+    DefaultAvatarsResponse,
     FeedbackRequest,
     FeedbackResponse,
     MeResponse,
     NicknameCheckRequest,
     NicknameCheckResponse,
+    SelectDefaultAvatarRequest,
     UpdateMeRequest,
     UserProfileResponse,
     UserSearchResult,
 )
+
+
+_DEFAULT_AVATARS: dict[str, DefaultAvatar] = {
+    "dav_tangerine_01": DefaultAvatar(
+        default_avatar_id="dav_tangerine_01",
+        name="Classic 한귤",
+        image_url="https://cdn.example.com/avatars/defaults/tangerine_01.png",
+        order=1,
+    ),
+    "dav_tangerine_02": DefaultAvatar(
+        default_avatar_id="dav_tangerine_02",
+        name="Book 한귤",
+        image_url="https://cdn.example.com/avatars/defaults/tangerine_02.png",
+        order=2,
+    ),
+    "dav_tangerine_03": DefaultAvatar(
+        default_avatar_id="dav_tangerine_03",
+        name="Graduation 한귤",
+        image_url="https://cdn.example.com/avatars/defaults/tangerine_03.png",
+        order=3,
+    ),
+}
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -44,13 +70,50 @@ def update_me(payload: UpdateMeRequest, user: CurrentUser = Depends(get_current_
     return get_me(user)
 
 
+@router.get(
+    "/avatars/defaults",
+    response_model=DefaultAvatarsResponse,
+    summary="List the built-in default character avatars",
+)
+def list_default_avatars(user: CurrentUser = Depends(get_current_user)) -> DefaultAvatarsResponse:
+    items = sorted(_DEFAULT_AVATARS.values(), key=lambda a: a.order)
+    return DefaultAvatarsResponse(items=items)
+
+
 @router.post(
     "/me/avatar",
-    response_model=AvatarUploadResponse,
-    summary="Upload profile avatar image",
+    response_model=AvatarResponse,
+    summary="Upload a photo from the user's device as their profile avatar",
+    description="Multipart upload. Accepts a single image file (JPEG/PNG/WebP/HEIC, ≤ 5 MB).",
 )
-def upload_avatar(file: UploadFile = File(...), user: CurrentUser = Depends(get_current_user)) -> AvatarUploadResponse:
-    return AvatarUploadResponse(avatar_url=f"https://cdn.example.com/avatars/{user.user_id}.png")
+def upload_avatar(
+    file: UploadFile = File(..., description="Image file taken from the phone's camera or photo library."),
+    user: CurrentUser = Depends(get_current_user),
+) -> AvatarResponse:
+    return AvatarResponse(
+        avatar_url=f"https://cdn.example.com/avatars/{user.user_id}.png",
+        source="uploaded",
+        default_avatar_id=None,
+    )
+
+
+@router.post(
+    "/me/avatar/default",
+    response_model=AvatarResponse,
+    summary="Pick one of the default character avatars as the profile image",
+)
+def select_default_avatar(
+    payload: SelectDefaultAvatarRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> AvatarResponse:
+    default = _DEFAULT_AVATARS.get(payload.default_avatar_id)
+    if not default:
+        raise NotFoundError(f"Unknown default_avatar_id '{payload.default_avatar_id}'.")
+    return AvatarResponse(
+        avatar_url=default.image_url,
+        source="default",
+        default_avatar_id=default.default_avatar_id,
+    )
 
 
 @router.post(
