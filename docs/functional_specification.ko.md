@@ -282,8 +282,9 @@
 
 | 메서드 & 경로 | 용도 |
 |---|---|
-| `GET /dashboard/summary` | 홈 화면 종합 스냅샷 |
+| `GET /dashboard/summary` | 홈 화면 종합 스냅샷(연속 일수, 오늘 학습 시간, 목표 진행, 활성 트랙) |
 | `GET /dashboard/streak` | 연속 학습일수 상세 |
+| `GET /dashboard/daily-progress?track_id=` | 일일 목표 스냅샷 — "Start Now" 진입 시 호출. `DailyProgress` 리스트(`{track_id, goal_key, target, current, achieved, resets_at}`)를 반환하며, 필터 없으면 두 트랙 모두 반환. |
 
 **비즈니스 규칙**
 
@@ -292,6 +293,7 @@
 - 다음 레슨이 구독 필요 콘텐츠일 때 `paywall_required=true`.
 - `goals[]`는 설정(§4.17)에서 지정한 항목 개수 목표 두 개의 진행도를 담는다: `daily_sentences`(`track_id=trk_conversation`), `daily_questions`(`track_id=trk_topik`). 각 항목은 `current`, `target`(5/10/20/30/40 중 하나), `achieved`를 포함하며, 클라이언트는 이를 바탕으로 링/프로그레스바와 마일스톤 달성 표시를 그린다. 카운터는 사용자의 로컬 일자 경계에서 초기화된다.
 - `today_minutes`는 표시 전용이다 — 학습 시간은 **목표 대상이 아니다**.
+- 홈 화면 번들: `streak_days`, `today_minutes`, `goals[]` 두 항목만으로 홈 화면의 모든 질문(연속 며칠? 오늘 얼마나? 오늘 목표 중 몇 개?)에 답한다. 세션 시작 화면처럼 진행도만 필요한 경우에는 `GET /dashboard/daily-progress`를 쓰면 더 가볍다.
 
 ---
 
@@ -421,6 +423,7 @@
 - 모든 `Sentence`는 저장 목록 정렬에 쓰이는 서버 관리 메타데이터 세 필드를 가진다: `saved_at`(저장 시점), `incorrect_count`(speech-attempt 오답 시 증가), `last_reviewed_at`(성공적인 speech-attempt, listen, 저장 목록 재오픈 등 모든 복습 이벤트에서 갱신).
 - `GET /sentences/bookmarks?sort=`는 `recent`(기본, `saved_at` 내림차순), `most_incorrect`(`incorrect_count` 내림차순), `longest_not_reviewed`(`last_reviewed_at` 오름차순, null 우선)을 받는다. 그 외 값은 `422 validation_error`.
 - 저장 목록에서 항목을 제거(`DELETE /sentences/{sentence_id}/bookmark`)하면 `saved_at`이 비워지고 해당 항목은 `GET /sentences/bookmarks`에서 빠진다. `incorrect_count`와 `last_reviewed_at`은 유지되므로 사용자가 같은 문장을 나중에 다시 저장하면 이력이 그대로 이어진다. 엔드포인트는 멱등이며, 이미 저장 상태가 아닌 항목에 호출해도 `204`를 반환한다.
+- **일일 목표 추적(회화).** 정답으로 처리된 `POST /sentences/{sentence_id}/speech-attempts`는 사용자의 `daily_sentence_goal` 카운터를 증가시킨다. 풀이 응답에는 갱신된 상태가 공유 `daily_progress` 객체(`{track_id, goal_key, target, current, achieved, resets_at}`)로 실려 오므로 클라이언트는 추가 요청 없이 화면의 `current / target`을 즉시 갱신한다. 초과 학습도 기록되며 `achieved`는 목표 달성 후 `true`로 래치된다.
 - `POST /sentences/{sentence_id}/speech-attempts`는 최대 2 MB, 15초 이하의 오디오만 허용한다. `audio` 파일이 없으면 `422 validation_error`를 반환한다. 모든 시도는 `attempt_id`로 기록되어 분석 / 자동 승급에 사용된다.
 - 클라이언트 UI는 `correct=true`일 때 파란 정답 메시지를, 그 외에는 빨간 "다시 생각해보고 재시도" 메시지와 재시도 버튼을 렌더링한다.
 
@@ -450,6 +453,7 @@
 - 해설은 `language` 쿼리 또는 프로필 기본 언어로 현지화.
 - 추천 TOPIK 문제를 틀려도 풀이 응답에는 사전 생성된 대화가 포함되지 않는다. 클라이언트는 챗봇 아이콘에 "왜 틀렸는지, 어떤 부분이 헷갈리셨는지 설명해드릴까요?" 같은 CTA를 노출한다. **사용자가 CTA를 눌렀을 때에만** 클라이언트가 `POST /ai/conversations`에 `context.kind="quiz_attempt"`, `attempt_id=…`, `reason="explain_mistake"`, `auto_assistant_reply=true`를 담아 호출하고, 서버는 그 시점에 첫 assistant 메시지로 해설을 생성해 돌려준다. 클라이언트는 사용자를 바로 그 대화 화면으로 이동시킨다.
 - TOPIK 정답 풀이는 학습 모듈의 TOPIK 자동 승급 기준으로 사용된다.
+- **일일 목표 추적(TOPIK).** 정답으로 처리된 `POST /quizzes/{quiz_id}/attempts`는 `daily_question_goal` 카운터를 증가시킨다. 풀이 응답에는 문장 쪽과 동일한 `DailyProgress` 형태의 `daily_progress`가 실려 오므로 UI는 "X / Y"를 바로 갱신한다. 오답은 카운터를 증가시키지 않는다.
 
 ---
 

@@ -282,8 +282,9 @@ Every user is eligible for a **7-day free trial** the first time they sign up fo
 
 | Method & Path | Purpose |
 |---|---|
-| `GET /dashboard/summary` | Aggregated home snapshot |
+| `GET /dashboard/summary` | Aggregated home snapshot (streak, today_minutes, goals, active tracks) |
 | `GET /dashboard/streak` | Detailed streak payload |
+| `GET /dashboard/daily-progress?track_id=` | Focused daily-goal snapshot — called on "Start Now" for the track the user is about to study. Returns a `DailyProgress` list `{track_id, goal_key, target, current, achieved, resets_at}` (all tracks when no filter). |
 
 **Business rules**
 
@@ -292,6 +293,7 @@ Every user is eligible for a **7-day free trial** the first time they sign up fo
 - `paywall_required=true` when the next lesson requires subscription.
 - `goals[]` carries today's progress on the two item-count goals configured in Settings (§4.17): `daily_sentences` (`track_id=trk_conversation`) and `daily_questions` (`track_id=trk_topik`). Each entry reports `current`, `target` (one of 5/10/20/30/40), and `achieved` so the client can render a ring/progress bar and flip the checkmark once the milestone is met. Counters roll over at the start of the user's local day.
 - `today_minutes` is exposed for informational display only — study time is **not** a goal target.
+- Home-screen bundle: `streak_days`, `today_minutes`, and the two `goals[]` entries together answer every home-screen question — "how many days in a row?", "how long today?", "how many of today's target items done?". Clients that need just the progress (e.g. session-start screens) can hit the lighter `GET /dashboard/daily-progress` instead.
 
 ---
 
@@ -421,6 +423,7 @@ Two distinct UIs live on the sentence screen:
 - Every `Sentence` carries three server-maintained fields for saved-list sorting: `saved_at` (set on save), `incorrect_count` (incremented on each wrong speech-attempt), and `last_reviewed_at` (updated on any review — successful speech attempt, listen event, or re-open from the saved list).
 - `GET /sentences/bookmarks?sort=` accepts `recent` (default, `saved_at` desc), `most_incorrect` (`incorrect_count` desc), or `longest_not_reviewed` (`last_reviewed_at` asc with nulls first). Unknown values return `422 validation_error`.
 - Removing a sentence from the saved list (`DELETE /sentences/{sentence_id}/bookmark`) clears `saved_at` and drops the item from `GET /sentences/bookmarks`. `incorrect_count` and `last_reviewed_at` are preserved so the history reappears intact if the user saves the same sentence again later. The endpoint is idempotent — calling it on an item that is not currently saved still returns `204`.
+- **Daily goal tracking (Conversation).** A correct `POST /sentences/{sentence_id}/speech-attempts` increments the user's `daily_sentence_goal` counter for the day. The attempt response echoes the updated state via the shared `daily_progress` object `{track_id, goal_key, target, current, achieved, resets_at}`; clients update the on-screen `current / target` without a follow-up fetch. Overflow still tracks beyond `target`; `achieved` latches `true` once the milestone is met.
 - `POST /sentences/{sentence_id}/speech-attempts` accepts audio up to 2 MB and 15 seconds. Requests without an `audio` file return `422 validation_error`. Each attempt mints an `attempt_id` for analytics / auto-promotion.
 - The client-side UI uses `correct=true` to render a blue confirmation; any `correct=false` variant renders a red "think again" prompt with a retry affordance.
 
@@ -450,6 +453,7 @@ Quizzes are the recommended content type for the TOPIK track. Every question is 
 - Explanations localized by `language` query or profile default.
 - When a recommended TOPIK attempt is incorrect, the attempt response carries no pre-built conversation. The client shows the chatbot icon with a CTA such as "Would you like an explanation of why it was incorrect or which part was confusing?". **Only when the user taps the CTA** does the client call `POST /ai/conversations` with `context.kind="quiz_attempt"`, `attempt_id=…`, `reason="explain_mistake"`, and `auto_assistant_reply=true`. The server then generates the explanation as the first assistant message in the new conversation, and the client navigates the user into it.
 - Correct TOPIK attempts feed the TOPIK auto-promotion criteria in the learning module.
+- **Daily goal tracking (TOPIK).** A correct `POST /quizzes/{quiz_id}/attempts` increments the user's `daily_question_goal` counter. The attempt response carries the updated `daily_progress` (same `DailyProgress` shape as on the sentences side), so the UI can refresh "X / Y" inline. Incorrect attempts do not increment.
 
 ---
 
