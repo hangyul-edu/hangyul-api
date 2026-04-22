@@ -337,7 +337,7 @@
 | `GET /lectures?track_id=&level=` | 특정 (트랙, 레벨)의 강의 목록 — 주로 TOPIK 보조 콘텐츠 |
 | `GET /lectures/{lecture_id}` | 강의 상세 |
 | `GET /lectures/{lecture_id}/video` | 서명된 영상 URL (HLS, TTL ≤ 1시간) |
-| `POST /lectures/{lecture_id}/progress` | 재생 하트비트(재생 위치만 기록, 완료 처리 아님) |
+| `POST /lectures/{lecture_id}/progress` | 재생 하트비트 — body `{position_seconds}`. 재생 위치를 저장해 다음 방문 시 이어보기를 가능하게 한다. 완료 처리는 아님 |
 | `POST /lectures/{lecture_id}/complete` | 강의 시청 완료 처리. 멱등 — 재호출 시 `already_completed=true`, `xp_earned=0`. TOPIK 자동 승급이 트리거되면 `LevelUpEvent`가 함께 반환된다. |
 
 **비즈니스 규칙**
@@ -347,7 +347,7 @@
 - 사용자는 `current_level`을 **자유롭게 위·아래로** 변경할 수 있으며, 이미 지나온 레벨로 되돌아가는 것도 가능하다(예: `1 → 2 → 3 → 2`). 이때 **해당 트랙의 진행 중인 승급 진행도는 초기화된다** — 새 레벨에서 다시 승급 평가를 받으려면 필요한 학습량을 처음부터 누적해야 한다.
 - 강의는 보조 콘텐츠이며 자동 승급에는 영향을 주지 않는다.
 - 각 `Lecture`는 `access ∈ {"free", "premium"}`을 가진다. 무료 회원도 목록과 메타데이터는 볼 수 있지만, 재생은 `access="free"` 강의에 한한다. 유료 강의에 대해 `GET /lectures/{lecture_id}/video`를 호출하면 비프리미엄 회원에게는 `402 subscription_required`가 반환된다. 프리미엄·체험 회원(`membership.is_premium=true`)은 모든 강의를 재생할 수 있다.
-- `POST /lectures/{lecture_id}/progress`는 `position_seconds`만 전달하는 재생 위치 하트비트이며 완료 처리에는 사용하지 않는다. 완료 플래그·XP 지급·TOPIK 자동 승급 트리거는 오직 `POST /lectures/{lecture_id}/complete`가 담당한다. `complete`를 다시 호출해도 안전하며(멱등), 재호출 응답은 `already_completed=true`와 `xp_earned=0`을 반환한다.
+- `POST /lectures/{lecture_id}/progress`는 `position_seconds`만 전달하는 재생 위치 하트비트이며 완료 처리에는 사용하지 않는다. 서버는 (사용자, 강의)별로 가장 최근 하트비트를 저장하고, 이후 `GET /lectures/{lecture_id}` 응답의 `my_playback.last_position_seconds`(그리고 `last_watched_at`, `completed`)에 노출한다. 클라이언트는 재진입 시 이 오프셋으로 시킹해 중단한 지점부터 이어본다. 완료 플래그·XP 지급·TOPIK 자동 승급 트리거는 오직 `POST /lectures/{lecture_id}/complete`가 담당한다. `complete`를 다시 호출해도 안전하며(멱등), 재호출 응답은 `already_completed=true`와 `xp_earned=0`을 반환한다.
 
 **레슨 중 팝업**
 
