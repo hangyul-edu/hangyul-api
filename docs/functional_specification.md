@@ -343,6 +343,9 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 | `GET /tracks` | List the two tracks with their metadata. |
 | `GET /tracks/{track_id}` | Track detail. |
 | `GET /tracks/{track_id}/levels` | Levels available in a track (1..N) with labels. |
+| `GET /tracks/{track_id}/courses` | Courses registered under the track, each with its lesson counts. |
+| `GET /courses/{course_id}` | Course detail — ordered lesson list with per-user completion state (drives the course page). |
+| `GET /lectures/{lecture_id}/speak-practice` | Speak-only practice set for a lesson — the `conversation_speak` popups in playback order, each referencing a `sentence_id`. |
 | `GET /me/learning` | My `current_level` per track. |
 | `PATCH /me/learning/{track_id}` | Manually update my `current_level` in a track. |
 | `GET /me/learning/events?type=level_up&cursor=` | Auto-promotion history. |
@@ -361,7 +364,14 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 - The user can manually change `current_level` in either direction (up or down) at any time, including returning to a level already visited (e.g. `1 → 2 → 3 → 2`). **Any manual change resets the in-flight promotion progress on that track**: the user must re-accumulate activity at the new level to be evaluated for promotion again.
 - Lectures are optional content and do not affect auto-promotion.
 - Each `Lecture` carries `access ∈ {"free", "premium"}`. Free members can list all lectures and see metadata but only play `access="free"` ones. `GET /lectures/{lecture_id}/video` returns `402 subscription_required` for a non-premium caller requesting a `premium` lecture; premium/trial callers (`membership.is_premium=true`) play anything.
+- Each popup is owned by exactly one lesson (`Lecture.popups[]`); that owning relationship is stored on the server and is the authoritative source for both the during-playback scheduler and the speak-only practice set. `SpeakPracticeItem.popup_id` on the practice response always maps back to the same `popup_id` the playback scheduler uses.
 - `POST /lectures/{lecture_id}/progress` carries only `position_seconds` — it is a position heartbeat and never marks completion. The server persists the latest heartbeat per (user, lecture) and surfaces it on subsequent `GET /lectures/{lecture_id}` calls as `my_playback.last_position_seconds` (plus `last_watched_at` and the lecture's `completed` state). Clients seek to this offset on re-entry so the user resumes from where they stopped. Only `POST /lectures/{lecture_id}/complete` flips the completion flag, grants XP, and feeds the TOPIK auto-promotion criteria. Re-calling `/complete` is safe (idempotent): subsequent responses carry `already_completed=true` and `xp_earned=0`.
+
+**Courses**
+
+The hierarchy is **Track → Course → Lesson (Lecture)**. A course bundles lessons with a title, description, cover image, and per-user completion counts. `Lecture.course_id` references the owning course (null for standalone lessons). Opening a course calls `GET /courses/{course_id}`, which returns the ordered lesson list together with each lesson's `completed` flag — enough to render the course page and the "X of Y complete" indicator.
+
+Each lesson row in the course page has a mic button on the right. Tapping it navigates to a speak-only practice screen that calls `GET /lectures/{lecture_id}/speak-practice`. The server filters the lesson's `popups[]` to just the `conversation_speak` entries (in playback order) and returns them with `popup_id`, `at_second`, and `sentence_id`. The client fetches the full `Sentence` via `GET /sentences/{sentence_id}` and submits attempts through the same `POST /sentences/{sentence_id}/speech-attempts` used everywhere else (§4.7) — history, pronunciation scoring, and daily-goal progress all flow through the existing pipeline.
 
 **In-lesson popups**
 

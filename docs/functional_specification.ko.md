@@ -343,6 +343,9 @@
 | `GET /tracks` | 두 트랙 목록 및 메타데이터 |
 | `GET /tracks/{track_id}` | 트랙 상세 |
 | `GET /tracks/{track_id}/levels` | 트랙이 제공하는 레벨 목록(1..N)과 라벨 |
+| `GET /tracks/{track_id}/courses` | 트랙에 등록된 코스 목록과 각 코스의 레슨 수 |
+| `GET /courses/{course_id}` | 코스 상세 — 정렬된 레슨 목록과 사용자별 완료 여부(코스 페이지를 그리는 데 사용) |
+| `GET /lectures/{lecture_id}/speak-practice` | 레슨의 따라 말하기 전용 연습 세트 — 해당 레슨의 `conversation_speak` 팝업을 재생 순으로 반환 |
 | `GET /me/learning` | 내 트랙별 `current_level` |
 | `PATCH /me/learning/{track_id}` | 트랙의 `current_level`을 수동으로 변경 |
 | `GET /me/learning/events?type=level_up&cursor=` | 자동 승급 이력 |
@@ -361,7 +364,14 @@
 - 사용자는 `current_level`을 **자유롭게 위·아래로** 변경할 수 있으며, 이미 지나온 레벨로 되돌아가는 것도 가능하다(예: `1 → 2 → 3 → 2`). 이때 **해당 트랙의 진행 중인 승급 진행도는 초기화된다** — 새 레벨에서 다시 승급 평가를 받으려면 필요한 학습량을 처음부터 누적해야 한다.
 - 강의는 보조 콘텐츠이며 자동 승급에는 영향을 주지 않는다.
 - 각 `Lecture`는 `access ∈ {"free", "premium"}`을 가진다. 무료 회원도 목록과 메타데이터는 볼 수 있지만, 재생은 `access="free"` 강의에 한한다. 유료 강의에 대해 `GET /lectures/{lecture_id}/video`를 호출하면 비프리미엄 회원에게는 `402 subscription_required`가 반환된다. 프리미엄·체험 회원(`membership.is_premium=true`)은 모든 강의를 재생할 수 있다.
+- 각 팝업은 정확히 하나의 레슨(`Lecture.popups[]`)에 소속된다. 이 관계는 서버에 저장되어 재생 중 팝업 스케줄러와 따라 말하기 전용 연습 세트 양쪽에 동일한 근거 자료로 사용된다. `SpeakPracticeItem.popup_id`는 항상 재생 스케줄러가 사용하는 `popup_id`와 일치한다.
 - `POST /lectures/{lecture_id}/progress`는 `position_seconds`만 전달하는 재생 위치 하트비트이며 완료 처리에는 사용하지 않는다. 서버는 (사용자, 강의)별로 가장 최근 하트비트를 저장하고, 이후 `GET /lectures/{lecture_id}` 응답의 `my_playback.last_position_seconds`(그리고 `last_watched_at`, `completed`)에 노출한다. 클라이언트는 재진입 시 이 오프셋으로 시킹해 중단한 지점부터 이어본다. 완료 플래그·XP 지급·TOPIK 자동 승급 트리거는 오직 `POST /lectures/{lecture_id}/complete`가 담당한다. `complete`를 다시 호출해도 안전하며(멱등), 재호출 응답은 `already_completed=true`와 `xp_earned=0`을 반환한다.
+
+**코스**
+
+구조는 **트랙 → 코스 → 레슨(Lecture)**이다. 코스는 제목·설명·커버 이미지·사용자 완료 카운트로 묶인 레슨 번들이며, `Lecture.course_id`가 소속 코스를 참조한다(코스에 속하지 않으면 null). 사용자가 코스에 들어가면 `GET /courses/{course_id}`를 호출해 정렬된 레슨 목록과 각 레슨의 `completed` 값을 받고, 코스 페이지와 "X / Y 완료" 표시를 그릴 수 있다.
+
+코스 페이지의 각 레슨 행 오른쪽에는 마이크 버튼이 있다. 버튼을 누르면 따라 말하기 전용 연습 화면으로 이동하며, 이때 `GET /lectures/{lecture_id}/speak-practice`를 호출한다. 서버는 해당 레슨의 `popups[]`에서 `conversation_speak` 팝업만 재생 순으로 필터링해 `popup_id`, `at_second`, `sentence_id`로 반환한다. 클라이언트는 `GET /sentences/{sentence_id}`로 전체 `Sentence`를 받고, 기존 `POST /sentences/{sentence_id}/speech-attempts`로 연습 결과를 제출한다(§4.7 참조) — 히스토리, 발음 평가, 일일 목표 진행 모두 기존 파이프라인을 그대로 사용한다.
 
 **레슨 중 팝업**
 
