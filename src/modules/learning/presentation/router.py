@@ -14,8 +14,11 @@ from src.modules.learning.presentation.schemas import (
     CoursesResponse,
     Lecture,
     LectureCompletionResponse,
+    LecturePlayResponse,
+    LecturePopupResolved,
     LectureProgressRequest,
     LectureProgressResponse,
+    LectureVideo,
     LectureVideoResponse,
     LecturesResponse,
     Level,
@@ -295,6 +298,89 @@ def report_lecture_progress(
         position_seconds=payload.position_seconds,
         last_watched_at=datetime.now(timezone.utc),
         completed=False,
+    )
+
+
+@lectures_router.get(
+    "/{lecture_id}/play",
+    response_model=LecturePlayResponse,
+    summary="Open a lesson for playback — bundled video + modals + resume position",
+    description=(
+        "Single call the player uses to start a lesson. Returns the signed HLS URL, the ordered "
+        "popup schedule with each modal's payload already resolved (Sentence for "
+        "`conversation_speak`, QuizQuestion for `topik_question`), and the caller's resume offset. "
+        "The client seeks to `my_playback.last_position_seconds` and begins streaming. Modals fire "
+        "against the inline payloads — no extra round trips for Sentence or QuizQuestion fetches."
+    ),
+)
+def play_lecture(
+    lecture_id: str, user: CurrentUser = Depends(get_current_user)
+) -> LecturePlayResponse:
+    from datetime import timedelta
+    from src.modules.quizzes.presentation.schemas import QuizChoice, QuizQuestion
+    from src.modules.sentences.presentation.schemas import Sentence, SentenceAudio
+
+    lecture = get_lecture(lecture_id, user)
+    video_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+    audio_expiry = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+    resolved: list[LecturePopupResolved] = []
+    for p in lecture.popups:
+        if p.kind == "conversation_speak" and p.sentence_id:
+            resolved.append(
+                LecturePopupResolved(
+                    popup_id=p.popup_id,
+                    kind="conversation_speak",
+                    at_second=p.at_second,
+                    sentence=Sentence(
+                        sentence_id=p.sentence_id,
+                        korean="안녕하세요.",
+                        display_text="안녕___.",
+                        translation="Hello.",
+                        translation_language="en",
+                        level=lecture.level,
+                        audio=SentenceAudio(
+                            url=f"https://cdn.example.com/audio/{p.sentence_id}.mp3?token=...",
+                            duration_ms=1800,
+                            expires_at=audio_expiry,
+                        ),
+                    ),
+                )
+            )
+        elif p.kind == "topik_question" and p.quiz_id:
+            resolved.append(
+                LecturePopupResolved(
+                    popup_id=p.popup_id,
+                    kind="topik_question",
+                    at_second=p.at_second,
+                    question=QuizQuestion(
+                        quiz_id=p.quiz_id,
+                        type="multiple_choice",
+                        prompt="다음 중 맞는 것을 고르세요.",
+                        level=lecture.level,
+                        choices=[
+                            QuizChoice(key="1", text="덕분에"),
+                            QuizChoice(key="2", text="동안"),
+                            QuizChoice(key="3", text="처럼"),
+                            QuizChoice(key="4", text="만큼"),
+                        ],
+                    ),
+                )
+            )
+
+    return LecturePlayResponse(
+        lecture_id=lecture_id,
+        track_id=lecture.track_id,
+        course_id=lecture.course_id,
+        title=lecture.title,
+        video=LectureVideo(
+            url=f"https://cdn.example.com/lectures/{lecture_id}/hls.m3u8?token=...",
+            expires_at=video_expiry,
+            captions_url=None,
+            duration_seconds=lecture.duration_seconds,
+        ),
+        popups=resolved,
+        my_playback=lecture.my_playback,
     )
 
 

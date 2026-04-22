@@ -5,6 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.modules.quizzes.presentation.schemas import QuizQuestion
+from src.modules.sentences.presentation.schemas import Sentence
+
 TrackKind = Literal["topik", "conversation"]
 LectureKind = Literal["video", "reading", "listening"]
 
@@ -213,6 +216,59 @@ class LectureVideoResponse(BaseModel):
     video_url: str = Field(description="Signed CDN URL, short-lived.")
     expires_at: datetime
     captions_url: str | None = None
+
+
+# --- Lesson "play" bundle ------------------------------------------------------
+# Served by GET /lectures/{lecture_id}/play. Everything the client needs to start
+# streaming the video and render the in-lesson modals at the right timestamps
+# without chasing per-popup lookups.
+
+
+class LectureVideo(BaseModel):
+    url: str = Field(description="Signed HLS playlist URL.")
+    expires_at: datetime
+    captions_url: str | None = None
+    duration_seconds: int = Field(ge=0)
+
+
+class LecturePopupResolved(BaseModel):
+    popup_id: str
+    kind: LecturePopupKind
+    at_second: int = Field(ge=0)
+    sentence: Sentence | None = Field(
+        default=None,
+        description=(
+            "Present iff kind == 'conversation_speak'. Full Sentence payload: Korean text, "
+            "display_text with blanks, translation in the caller's language, and the TTS audio — "
+            "everything the modal needs, no extra fetch."
+        ),
+    )
+    question: QuizQuestion | None = Field(
+        default=None,
+        description=(
+            "Present iff kind == 'topik_question'. Full QuizQuestion payload with choices, "
+            "prompt, prompt_translation, and per-user history — ready to render as the modal."
+        ),
+    )
+
+
+class LecturePlayResponse(BaseModel):
+    lecture_id: str
+    track_id: str
+    course_id: str | None = None
+    title: str
+    video: LectureVideo
+    popups: list[LecturePopupResolved] = Field(
+        description=(
+            "Every modal inline — ordered by `at_second`. Conversation lessons carry sentences "
+            "(with translation in users.language); TOPIK lessons carry questions. Mixed lessons "
+            "may carry both."
+        ),
+    )
+    my_playback: LectureMyPlayback | None = Field(
+        default=None,
+        description="Caller's resume position; the client seeks here before starting playback.",
+    )
 
 
 class LectureProgressRequest(BaseModel):
