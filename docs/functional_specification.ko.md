@@ -420,7 +420,7 @@
 - 문장 `status`는 읽기 시도·노출 신호에 따라 `new → learning → mastered`로 이동.
 - 추천 문장에는 항상 `audio`(AI TTS)가 포함된다. 서명 URL TTL은 15분 이하이며, 클라이언트는 첫 수신 시 파일을 로컬에 캐시하고 재생 버튼은 캐시된 파일을 재사용한다. `expires_at` 이후에는 `GET /sentences/{sentence_id}/audio`로 새 URL을 재발급받는다.
 - **저장 버튼**은 추천 카드와 레슨 중 팝업(§4.6 `conversation_speak`)에서 동일한 동작을 수행하며, 모두 `POST /sentences/{sentence_id}/bookmark`를 호출한다. 저장된 항목은 `GET /sentences/bookmarks`로 한 화면에 모아보며, 각 항목에는 한국어 본문과 사용자 언어 `translation`, 개별 재생이 가능한 `audio`가 포함된다.
-- 모든 `Sentence`는 저장 목록 정렬에 쓰이는 서버 관리 메타데이터 세 필드를 가진다: `saved_at`(저장 시점), `incorrect_count`(speech-attempt 오답 시 증가), `last_reviewed_at`(성공적인 speech-attempt, listen, 저장 목록 재오픈 등 모든 복습 이벤트에서 갱신).
+- 모든 `Sentence`는 저장 목록 정렬과 복습 UI에 쓰이는 서버 관리 히스토리를 포함한다: `saved_at`(저장 시점), `attempt_count`(총 speech-attempt 수), `incorrect_count`(오답 speech-attempt 수 — 한 번도 맞추지 못해도 계속 누적), `ever_answered_correctly`(불리언), `last_reviewed_at`(성공적인 speech-attempt·listen·저장 목록 재오픈 시 갱신). 저장 → 해제 → 재저장 사이클에서도 유지된다.
 - `GET /sentences/bookmarks?sort=`는 `recent`(기본, `saved_at` 내림차순), `most_incorrect`(`incorrect_count` 내림차순), `longest_not_reviewed`(`last_reviewed_at` 오름차순, null 우선)을 받는다. 그 외 값은 `422 validation_error`.
 - 저장 목록에서 항목을 제거(`DELETE /sentences/{sentence_id}/bookmark`)하면 `saved_at`이 비워지고 해당 항목은 `GET /sentences/bookmarks`에서 빠진다. `incorrect_count`와 `last_reviewed_at`은 유지되므로 사용자가 같은 문장을 나중에 다시 저장하면 이력이 그대로 이어진다. 엔드포인트는 멱등이며, 이미 저장 상태가 아닌 항목에 호출해도 `204`를 반환한다.
 - **일일 목표 추적(회화).** 정답으로 처리된 `POST /sentences/{sentence_id}/speech-attempts`는 사용자의 `daily_sentence_goal` 카운터를 증가시킨다. 풀이 응답에는 갱신된 상태가 공유 `daily_progress` 객체(`{track_id, goal_key, target, current, achieved, resets_at}`)로 실려 오므로 클라이언트는 추가 요청 없이 화면의 `current / target`을 즉시 갱신한다. 초과 학습도 기록되며 `achieved`는 목표 달성 후 `true`로 래치된다.
@@ -445,6 +445,9 @@
 | `POST /quizzes/{quiz_id}/attempts` | 답안 제출 |
 | `GET /quizzes/{quiz_id}/attempts/{attempt_id}` | 과거 풀이 상세 |
 | `GET /quizzes/attempts/me` | 내 풀이 이력 |
+| `GET /quizzes/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | 저장한 문제 목록 — 문장 저장 목록과 동일한 정렬 규칙 |
+| `POST /quizzes/{quiz_id}/bookmark` | 문제를 저장 목록에 추가 |
+| `DELETE /quizzes/{quiz_id}/bookmark` | 저장 목록에서 제거 — 멱등 `204` |
 
 **비즈니스 규칙**
 
@@ -454,6 +457,7 @@
 - 추천 TOPIK 문제를 틀려도 풀이 응답에는 사전 생성된 대화가 포함되지 않는다. 클라이언트는 챗봇 아이콘에 "왜 틀렸는지, 어떤 부분이 헷갈리셨는지 설명해드릴까요?" 같은 CTA를 노출한다. **사용자가 CTA를 눌렀을 때에만** 클라이언트가 `POST /ai/conversations`에 `context.kind="quiz_attempt"`, `attempt_id=…`, `reason="explain_mistake"`, `auto_assistant_reply=true`를 담아 호출하고, 서버는 그 시점에 첫 assistant 메시지로 해설을 생성해 돌려준다. 클라이언트는 사용자를 바로 그 대화 화면으로 이동시킨다.
 - TOPIK 정답 풀이는 학습 모듈의 TOPIK 자동 승급 기준으로 사용된다.
 - **일일 목표 추적(TOPIK).** 정답으로 처리된 `POST /quizzes/{quiz_id}/attempts`는 `daily_question_goal` 카운터를 증가시킨다. 풀이 응답에는 문장 쪽과 동일한 `DailyProgress` 형태의 `daily_progress`가 실려 오므로 UI는 "X / Y"를 바로 갱신한다. 오답은 카운터를 증가시키지 않는다.
+- **사용자가 마주친 모든 문제에 대해 개별 히스토리를 저장한다(한 번도 맞추지 못한 문제라도 마찬가지).** `QuizQuestion`은 `attempt_count`, `incorrect_count`, `ever_answered_correctly`, `last_attempted_at`, `last_reviewed_at`과 저장 상태(`bookmarked`, `saved_at`)를 가진다. 덕분에 "가장 자주 틀린 문제" 정렬이 한 번도 맞추지 못한 문제에도 동작하며, `POST /quizzes/{quiz_id}/bookmark`로 저장하는 데 정답 이력이 필요하지 않다.
 
 ---
 

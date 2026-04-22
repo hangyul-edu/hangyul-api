@@ -420,7 +420,7 @@ Two distinct UIs live on the sentence screen:
 - Sentence `status` moves `new → learning → mastered` based on speech + exposure signals.
 - Recommended sentences always include `audio` (AI TTS). Audio URLs are signed with a ≤ 15-minute TTL; the client caches the file locally on first fetch and reuses the cached file for replay. After `expires_at`, the client can call `GET /sentences/{sentence_id}/audio` to mint a fresh URL.
 - The **save button** is the same action on a recommendation card and on an in-lesson popup (§4.6 `conversation_speak` modal): both call `POST /sentences/{sentence_id}/bookmark`. Saved items surface on the saved-list screen (`GET /sentences/bookmarks`) with full Korean text, `translation` in the user's language, and `audio` so each item is individually playable.
-- Every `Sentence` carries three server-maintained fields for saved-list sorting: `saved_at` (set on save), `incorrect_count` (incremented on each wrong speech-attempt), and `last_reviewed_at` (updated on any review — successful speech attempt, listen event, or re-open from the saved list).
+- Every `Sentence` carries server-maintained per-user history for saved-list sorting and review UX: `saved_at` (set on save), `attempt_count` (total speech-attempts), `incorrect_count` (wrong speech-attempts — stored even if the user has never succeeded), `ever_answered_correctly` (bool), and `last_reviewed_at` (updated on successful attempts, listen events, or re-opening from the saved list). These stay populated across save → unsave → save cycles.
 - `GET /sentences/bookmarks?sort=` accepts `recent` (default, `saved_at` desc), `most_incorrect` (`incorrect_count` desc), or `longest_not_reviewed` (`last_reviewed_at` asc with nulls first). Unknown values return `422 validation_error`.
 - Removing a sentence from the saved list (`DELETE /sentences/{sentence_id}/bookmark`) clears `saved_at` and drops the item from `GET /sentences/bookmarks`. `incorrect_count` and `last_reviewed_at` are preserved so the history reappears intact if the user saves the same sentence again later. The endpoint is idempotent — calling it on an item that is not currently saved still returns `204`.
 - **Daily goal tracking (Conversation).** A correct `POST /sentences/{sentence_id}/speech-attempts` increments the user's `daily_sentence_goal` counter for the day. The attempt response echoes the updated state via the shared `daily_progress` object `{track_id, goal_key, target, current, achieved, resets_at}`; clients update the on-screen `current / target` without a follow-up fetch. Overflow still tracks beyond `target`; `achieved` latches `true` once the milestone is met.
@@ -445,6 +445,9 @@ Quizzes are the recommended content type for the TOPIK track. Every question is 
 | `POST /quizzes/{quiz_id}/attempts` | Submit answer |
 | `GET /quizzes/{quiz_id}/attempts/{attempt_id}` | Past attempt detail |
 | `GET /quizzes/attempts/me` | My attempt history |
+| `GET /quizzes/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | Saved questions list — same sort semantics as the saved-sentence list |
+| `POST /quizzes/{quiz_id}/bookmark` | Save the question to the saved list |
+| `DELETE /quizzes/{quiz_id}/bookmark` | Remove from saved list — idempotent `204` |
 
 **Business rules**
 
@@ -454,6 +457,7 @@ Quizzes are the recommended content type for the TOPIK track. Every question is 
 - When a recommended TOPIK attempt is incorrect, the attempt response carries no pre-built conversation. The client shows the chatbot icon with a CTA such as "Would you like an explanation of why it was incorrect or which part was confusing?". **Only when the user taps the CTA** does the client call `POST /ai/conversations` with `context.kind="quiz_attempt"`, `attempt_id=…`, `reason="explain_mistake"`, and `auto_assistant_reply=true`. The server then generates the explanation as the first assistant message in the new conversation, and the client navigates the user into it.
 - Correct TOPIK attempts feed the TOPIK auto-promotion criteria in the learning module.
 - **Daily goal tracking (TOPIK).** A correct `POST /quizzes/{quiz_id}/attempts` increments the user's `daily_question_goal` counter. The attempt response carries the updated `daily_progress` (same `DailyProgress` shape as on the sentences side), so the UI can refresh "X / Y" inline. Incorrect attempts do not increment.
+- **Per-user history is stored on every question the caller has interacted with, independent of correctness.** `QuizQuestion` carries `attempt_count`, `incorrect_count`, `ever_answered_correctly`, `last_attempted_at`, `last_reviewed_at`, plus save state (`bookmarked`, `saved_at`). These persist even for a question the user has never answered correctly — so the "most frequently answered incorrectly" saved-list sort still works, and saving the question (`POST /quizzes/{quiz_id}/bookmark`) does not require a correct answer first.
 
 ---
 
