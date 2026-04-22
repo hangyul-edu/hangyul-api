@@ -353,7 +353,8 @@
 | `GET /learning/stats?range=week\|month\|year\|all` | 차트용 집계 통계 |
 | `GET /lectures?track_id=&level=` | 특정 (트랙, 레벨)의 강의 목록 — 주로 TOPIK 보조 콘텐츠 |
 | `GET /lectures/{lecture_id}` | 강의 상세 |
-| `GET /lectures/{lecture_id}/video` | 서명된 영상 URL (HLS, TTL ≤ 1시간) |
+| `GET /lectures/{lecture_id}/play` | **재생용 번들 페이로드** — 서명된 HLS URL, `my_playback` 이어보기 위치, 모든 팝업과 그 안에 들어갈 모달 콘텐츠(회화는 Sentence, TOPIK은 QuizQuestion)까지 한 번에 반환. 플레이어가 레슨을 여는 기본 엔드포인트 |
+| `GET /lectures/{lecture_id}/video` | `expires_at` 경과 후 서명된 영상 URL만 재발급. 최초 로딩은 `/play`를 사용 |
 | `POST /lectures/{lecture_id}/progress` | 재생 하트비트 — body `{position_seconds}`. 재생 위치를 저장해 다음 방문 시 이어보기를 가능하게 한다. 완료 처리는 아님 |
 | `POST /lectures/{lecture_id}/complete` | 강의 시청 완료 처리. 멱등 — 재호출 시 `already_completed=true`, `xp_earned=0`. TOPIK 자동 승급이 트리거되면 `LevelUpEvent`가 함께 반환된다. |
 
@@ -365,6 +366,11 @@
 - 강의는 보조 콘텐츠이며 자동 승급에는 영향을 주지 않는다.
 - 각 `Lecture`는 `access ∈ {"free", "premium"}`을 가진다. 무료 회원도 목록과 메타데이터는 볼 수 있지만, 재생은 `access="free"` 강의에 한한다. 유료 강의에 대해 `GET /lectures/{lecture_id}/video`를 호출하면 비프리미엄 회원에게는 `402 subscription_required`가 반환된다. 프리미엄·체험 회원(`membership.is_premium=true`)은 모든 강의를 재생할 수 있다.
 - 각 팝업은 정확히 하나의 레슨(`Lecture.popups[]`)에 소속된다. 이 관계는 서버에 저장되어 재생 중 팝업 스케줄러와 따라 말하기 전용 연습 세트 양쪽에 동일한 근거 자료로 사용된다. `SpeakPracticeItem.popup_id`는 항상 재생 스케줄러가 사용하는 `popup_id`와 일치한다.
+- 영상 플레이어는 `GET /lectures/{lecture_id}/play`를 기본 진입점으로 사용한다. 응답에는 다음이 함께 담긴다:
+  - `video` — 서명된 HLS URL, `expires_at`, 자막 URL(선택), 총 재생 시간.
+  - `popups` — 각 모달에 들어갈 `Sentence` 또는 `QuizQuestion`이 이미 포함된 상태. 회화 레슨이면 문장은 `korean`, `display_text`(빈칸 포함), 사용자의 `users.language`로 번역된 `translation`, TTS `audio`까지 싣고 오며, TOPIK 레슨이면 문제는 `prompt`, `prompt_translation`, `choices`, 사용자 히스토리까지 포함된다. 두 유형이 섞여 있는 레슨도 동일한 구조로 처리된다.
+  - `my_playback` — 사용자의 이어보기 오프셋. 클라이언트는 재생 시작 전에 이 위치로 시킹한다.
+  이 한 번의 호출이면 재생 중 팝업 콘텐츠 때문에 잠깐 멈추는 일이 생기지 않는다. `GET /lectures/{lecture_id}/video`는 `expires_at` 이후 서명 URL만 새로 받아야 하는 경우에만 사용한다.
 - `POST /lectures/{lecture_id}/progress`는 `position_seconds`만 전달하는 재생 위치 하트비트이며 완료 처리에는 사용하지 않는다. 서버는 (사용자, 강의)별로 가장 최근 하트비트를 저장하고, 이후 `GET /lectures/{lecture_id}` 응답의 `my_playback.last_position_seconds`(그리고 `last_watched_at`, `completed`)에 노출한다. 클라이언트는 재진입 시 이 오프셋으로 시킹해 중단한 지점부터 이어본다. 완료 플래그·XP 지급·TOPIK 자동 승급 트리거는 오직 `POST /lectures/{lecture_id}/complete`가 담당한다. `complete`를 다시 호출해도 안전하며(멱등), 재호출 응답은 `already_completed=true`와 `xp_earned=0`을 반환한다.
 
 **코스**

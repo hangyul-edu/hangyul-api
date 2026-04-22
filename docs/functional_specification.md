@@ -353,7 +353,8 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 | `GET /learning/stats?range=week\|month\|year\|all` | Aggregated stats for charts. |
 | `GET /lectures?track_id=&level=` | List lectures for a (track, level). Lectures are a supplemental content type, primarily for TOPIK. |
 | `GET /lectures/{lecture_id}` | Lecture detail. |
-| `GET /lectures/{lecture_id}/video` | Signed video URL (HLS, TTL ≤ 1 h). |
+| `GET /lectures/{lecture_id}/play` | **Bundled playback payload** — signed HLS URL, `my_playback` resume offset, and every popup inline with its full modal payload resolved (Sentence for `conversation_speak`, QuizQuestion for `topik_question`). Single call the player uses to start a lesson. |
+| `GET /lectures/{lecture_id}/video` | Refresh just the signed video URL after `expires_at`. Prefer `/play` for the initial load. |
 | `POST /lectures/{lecture_id}/progress` | Playback heartbeat — body `{position_seconds}`. Persists the position so the lecture can be resumed on return. Does not mark completion. |
 | `POST /lectures/{lecture_id}/complete` | Mark the lecture as finished watching. Idempotent; subsequent calls return `already_completed=true` with `xp_earned=0`. May emit a `LevelUpEvent` when it triggers TOPIK auto-promotion. |
 
@@ -365,6 +366,11 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 - Lectures are optional content and do not affect auto-promotion.
 - Each `Lecture` carries `access ∈ {"free", "premium"}`. Free members can list all lectures and see metadata but only play `access="free"` ones. `GET /lectures/{lecture_id}/video` returns `402 subscription_required` for a non-premium caller requesting a `premium` lecture; premium/trial callers (`membership.is_premium=true`) play anything.
 - Each popup is owned by exactly one lesson (`Lecture.popups[]`); that owning relationship is stored on the server and is the authoritative source for both the during-playback scheduler and the speak-only practice set. `SpeakPracticeItem.popup_id` on the practice response always maps back to the same `popup_id` the playback scheduler uses.
+- `GET /lectures/{lecture_id}/play` is the recommended entry point for the video player. It bundles:
+  - `video` — signed HLS URL, `expires_at`, optional captions, total duration.
+  - `popups` — every modal with its `Sentence` or `QuizQuestion` already resolved inline. For Conversation lessons the sentences carry `korean`, `display_text` (with blanks), the `translation` in the caller's `users.language`, and the TTS `audio`; for TOPIK lessons the questions carry `prompt`, `prompt_translation`, `choices`, and the per-user history fields. Mixed lessons carry both.
+  - `my_playback` — the caller's resume offset, so the client seeks before starting playback (smooth resume).
+  With this single round trip the player never has to stall mid-video to resolve a popup's content; everything needed for smooth playback arrives up front. `GET /lectures/{lecture_id}/video` remains for the narrow case where only the signed URL needs refreshing after `expires_at`.
 - `POST /lectures/{lecture_id}/progress` carries only `position_seconds` — it is a position heartbeat and never marks completion. The server persists the latest heartbeat per (user, lecture) and surfaces it on subsequent `GET /lectures/{lecture_id}` calls as `my_playback.last_position_seconds` (plus `last_watched_at` and the lecture's `completed` state). Clients seek to this offset on re-entry so the user resumes from where they stopped. Only `POST /lectures/{lecture_id}/complete` flips the completion flag, grants XP, and feeds the TOPIK auto-promotion criteria. Re-calling `/complete` is safe (idempotent): subsequent responses carry `already_completed=true` and `xp_earned=0`.
 
 **Courses**
