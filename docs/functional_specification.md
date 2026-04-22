@@ -174,6 +174,7 @@ The response schema (`AvatarResponse`) is the same for both paths and carries `s
 
 - Nickname is unique case-insensitively.
 - `friend_code` is a 6–8 char code unique per user; used for adding friends.
+- **Contact-access consent** is stored as a single boolean on the user's settings (`AppSettings.contact_access_granted`, default `false`) and is mutated through its own endpoint — see §4.17 for the dedicated flow. Granting this consent is a prerequisite for inviting friends from the phone's address book (§4.12) and for comparing league rankings with phone-book friends (§4.11).
 - Photo upload accepts JPEG / PNG / WebP / HEIC, ≤ 5 MB; missing `file` returns `422 validation_error`.
 - `POST /users/me/avatar/default` rejects unknown `default_avatar_id` with `404 not_found`.
 - The two avatar-setting endpoints both return `AvatarResponse`, and the server stores `source` alongside `avatar_url` so that a future catalog refresh can re-resolve `default_avatar_id` to the latest image.
@@ -579,6 +580,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 - Rankings update in real time; a few seconds of lag is acceptable.
 - At season close, `RankingEntry.outcome` is set to `promote` / `maintain` / `demote` per the bands above.
 - Group assignment is stable within a season and recomputed at season start.
+- Comparing rankings with phone-book friends (e.g. highlighting address-book contacts on the leaderboard) requires `settings.contact_access_granted == true` (see §4.17). Without consent, the leaderboard still renders — just without the contact-friend callouts.
 
 ---
 
@@ -604,6 +606,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 - Friends capped at 300 per user.
 - Feed item types: `level_up`, `streak`, `badge`, `league_promotion`, `friend_join`.
 - Reactions use emoji shortcodes; rate-limited to 30 / min / user.
+- Inviting friends from the phone's address book requires `settings.contact_access_granted == true` (see §4.17). When the caller has not granted consent, the client shows the dedicated allow-contacts modal and persists the answer via `PUT /settings/me/contact-access`; friend-by-code lookups (`GET /users/search?code=`) do **not** require this flag — only the contact-address-book path does.
 
 ---
 
@@ -707,8 +710,9 @@ Users view progress via `GET /dashboard/summary`; `goals[]` reports `current`, `
 
 | Method & Path | Purpose |
 |---|---|
-| `GET /settings/me` | UI preferences and daily goals |
+| `GET /settings/me` | UI preferences, daily goals, contact-access flag |
 | `PUT /settings/me` | Update UI preferences and/or daily goals |
+| `PUT /settings/me/contact-access` | Record the user's answer from the separate "allow contacts" modal (`{granted: bool}`) |
 | `GET /me/learning` | Read `current_level` per track (see 4.6) |
 | `PATCH /me/learning/{track_id}` | Change `current_level` in a track (see 4.6) |
 
@@ -716,6 +720,7 @@ Users view progress via `GET /dashboard/summary`; `goals[]` reports `current`, `
 
 - Language change is propagated to `users.language` automatically.
 - `exclude_speaking` defaults to `false`. Flipping it only affects client-side popup rendering during lessons (see §4.6); the server returns the unfiltered popup list.
+- `contact_access_granted` defaults to `false`. The app surfaces this as a **separate "allow contacts" modal** (not bundled with the first-run onboarding), and the answer is sent through the dedicated `PUT /settings/me/contact-access` endpoint — general `PUT /settings/me` does not accept this field. Granting it is required for address-book friend invites (§4.12) and phone-book ranking comparisons (§4.11).
 - `daily_sentence_goal` and `daily_question_goal` must be one of `5 / 10 / 20 / 30 / 40`. Any other value returns `422 validation_error`.
 - `achieved=true` latches when `current >= target` and stays true for the rest of the day; it does not flip back even if the client re-fetches after further study.
 - Manual level changes delegate to `PATCH /me/learning/{track_id}`. Users may move up or down freely. Any such change **resets the in-flight promotion progress** on that track, so auto-promotion re-evaluates from scratch at the new level (see 4.6).

@@ -174,6 +174,7 @@
 
 - 닉네임은 대소문자 구분 없이 유일해야 한다.
 - `friend_code`는 사용자당 고유한 6–8자 코드로, 친구 추가에 사용.
+- **연락처 접근 동의**는 설정의 단일 불리언(`AppSettings.contact_access_granted`, 기본 `false`)에 저장되며, 전용 엔드포인트로만 변경한다(§4.17 참조). 이 값이 `true`여야 주소록 기반 친구 초대(§4.12)와 주소록 친구 기준 리그 순위 비교(§4.11)가 가능하다.
 - 사진 업로드는 JPEG / PNG / WebP / HEIC 최대 5 MB를 허용하며, `file`이 없으면 `422 validation_error` 반환.
 - `POST /users/me/avatar/default`는 알 수 없는 `default_avatar_id`에 대해 `404 not_found`를 반환.
 - 두 아바타 설정 엔드포인트는 모두 `AvatarResponse`를 반환하며, 서버는 `avatar_url`과 함께 `source`(및 `default_avatar_id`)를 저장해 추후 카탈로그 갱신 시 최신 이미지를 다시 해석할 수 있게 한다.
@@ -579,6 +580,7 @@
 - 순위는 실시간으로 갱신된다(수 초 단위 지연은 허용).
 - 시즌이 종료되면 `RankingEntry.outcome`이 위 구간 기준으로 `promote` / `maintain` / `demote` 중 하나로 설정된다.
 - 그룹 배정은 시즌 내에서 고정되며, 시즌 시작 시점에 재계산된다.
+- 주소록 친구 기준으로 순위를 비교(예: 리더보드에 주소록 친구 하이라이트)하려면 `settings.contact_access_granted == true`여야 한다(§4.17 참조). 동의가 없으면 리더보드는 그대로 노출되고 주소록 친구 하이라이트만 생략된다.
 
 ---
 
@@ -604,6 +606,7 @@
 - 친구 최대 300명.
 - 피드 아이템 타입: `level_up`, `streak`, `badge`, `league_promotion`, `friend_join`.
 - 반응은 이모지 shortcode 사용, 사용자당 분당 30회 제한.
+- 주소록 기반 친구 초대는 `settings.contact_access_granted == true`일 때만 가능하다(§4.17 참조). 동의가 없으면 클라이언트가 별도의 "연락처 접근 허용" 모달을 띄우고 그 응답을 `PUT /settings/me/contact-access`로 저장한다. 친구 코드 검색(`GET /users/search?code=`)은 이 플래그와 **무관**하게 항상 가능하다.
 
 ---
 
@@ -707,8 +710,9 @@
 
 | 메서드 & 경로 | 용도 |
 |---|---|
-| `GET /settings/me` | UI 환경설정과 일일 목표 조회 |
+| `GET /settings/me` | UI 환경설정, 일일 목표, 연락처 접근 동의 플래그 조회 |
 | `PUT /settings/me` | UI 환경설정 또는 일일 목표 변경 |
+| `PUT /settings/me/contact-access` | "연락처 접근 허용" 모달 응답 저장(`{granted: bool}`) |
 | `GET /me/learning` | 4.6 참조 — 트랙별 `current_level` 조회 |
 | `PATCH /me/learning/{track_id}` | 4.6 참조 — 트랙의 `current_level` 변경 |
 
@@ -716,6 +720,7 @@
 
 - 언어 변경은 `users.language`에 자동 반영.
 - `exclude_speaking`의 기본값은 `false`. 플래그는 레슨 중 팝업의 클라이언트 렌더링에만 영향을 주며(§4.6 참조), 서버는 필터링하지 않은 전체 팝업 목록을 반환한다.
+- `contact_access_granted`의 기본값은 `false`. 앱은 이 동의를 **별도의 "연락처 접근 허용" 모달**로 물으며, 응답은 전용 엔드포인트 `PUT /settings/me/contact-access`로만 저장한다. 일반 `PUT /settings/me`는 이 필드를 받지 않는다. `true`여야 주소록 기반 친구 초대(§4.12)와 주소록 친구 기준 리그 순위 비교(§4.11)가 가능하다.
 - `daily_sentence_goal`, `daily_question_goal`은 `5 / 10 / 20 / 30 / 40` 중 하나여야 한다. 그 외 값은 `422 validation_error`.
 - `achieved=true`는 `current >= target`일 때 래치되며, 이후 같은 날에 재조회해도 다시 false로 돌아가지 않는다.
 - 레벨 수동 변경은 `PATCH /me/learning/{track_id}`로 위임된다. 사용자는 자유롭게 위·아래로 변경할 수 있으며, 변경 시 **해당 트랙의 진행 중인 승급 진행도가 초기화**되어 자동 승급이 새 레벨에서 처음부터 재평가된다(4.6 참조).
