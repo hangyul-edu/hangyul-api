@@ -240,6 +240,7 @@
 - `today_minutes_goal`(기본 10분)을 달성하면 `streak_days`가 증가.
 - `freeze_tokens`(0 이상)는 하루를 빼먹어도 연속 학습일수를 보호.
 - 다음 레슨이 구독 필요 콘텐츠일 때 `paywall_required=true`.
+- `goals[]`는 설정(§4.17)에서 지정한 일일 목표별 진행도를 담는다: `daily_minutes`(unit=minutes), `daily_sentences`(unit=count, `track_id=trk_conversation`), `daily_questions`(unit=count, `track_id=trk_topik`). 각 항목의 `target`과 `current`로 링/프로그레스바를 그린다. 카운터는 사용자의 로컬 일자 경계에서 초기화된다.
 
 ---
 
@@ -621,21 +622,33 @@
 
 ### 4.17 앱 설정 (`settings`)
 
-**화면:** 언어 · 테마 · 오디오 · 진동 · 로마자 표기 · 일일 목표 · 활성 트랙 · 트랙별 현재 레벨.
+**화면:** 언어 · 테마 · 오디오 · 진동 · 로마자 표기 · 일일 목표(시간 + 회화 문장 수 + TOPIK 문제 수) · 활성 트랙 · 트랙별 현재 레벨.
+
+**일일 목표**
+
+`AppSettings`에 세 개의 독립 카운터가 있다:
+
+| 필드 | 범위 | 한계 | 기본값 |
+|---|---|---|---|
+| `daily_goal_minutes` | 전체 활동 | 5–120 | 10 |
+| `daily_sentence_goal` | 회화 트랙 — 학습한 문장 수 | 1–200 | 10 |
+| `daily_question_goal` | TOPIK 트랙 — 풀이한 문제 수 | 1–200 | 10 |
+
+사용자는 세 목표 모두의 진행도를 `GET /dashboard/summary`(4.5 참조)에서 확인한다. 응답의 `goals[]`에는 각 항목의 `current`와 `target`이 들어 있고, 트랙별 목표에는 해당 `track_id`가 태깅된다.
 
 **엔드포인트**
 
 | 메서드 & 경로 | 용도 |
 |---|---|
-| `GET /settings/me` | UI 환경설정 조회 |
-| `PUT /settings/me` | UI 환경설정 변경 |
+| `GET /settings/me` | UI 환경설정과 일일 목표 조회 |
+| `PUT /settings/me` | UI 환경설정 또는 일일 목표 변경 |
 | `GET /me/learning` | 4.6 참조 — 트랙별 `current_level` 조회 |
 | `PATCH /me/learning/{track_id}` | 4.6 참조 — 트랙의 `current_level` 변경 |
 
 **비즈니스 규칙**
 
 - 언어 변경은 `users.language`에 자동 반영.
-- `daily_goal_minutes` 범위는 5–120분.
+- `daily_goal_minutes` 범위는 5–120분. `daily_sentence_goal`, `daily_question_goal` 범위는 1–200. 범위를 벗어나면 `422 validation_error`.
 - 레벨 수동 변경은 `PATCH /me/learning/{track_id}`로 위임된다. 사용자는 자유롭게 위·아래로 변경할 수 있으며, 변경 시 **해당 트랙의 진행 중인 승급 진행도가 초기화**되어 자동 승급이 새 레벨에서 처음부터 재평가된다(4.6 참조).
 
 ---

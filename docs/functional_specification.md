@@ -240,6 +240,7 @@ The response schema (`AvatarResponse`) is the same for both paths and carries `s
 - `streak_days` increments when the user hits `today_minutes_goal` (default 10 min).
 - `freeze_tokens` (0+) protect a streak if the user misses a day.
 - `paywall_required=true` when the next lesson requires subscription.
+- `goals[]` carries today's progress on each daily goal configured in Settings (§4.17): `daily_minutes` (unit=minutes), `daily_sentences` (unit=count, `track_id=trk_conversation`), and `daily_questions` (unit=count, `track_id=trk_topik`). Each item reports `target` and `current`, so the client can render a ring/progress bar per goal. Counters roll over at the start of the user's local day.
 
 ---
 
@@ -621,21 +622,33 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 ### 4.17 App settings (`settings`)
 
-**Screens:** language · theme · audio · vibration · romanization · daily goal · active track · current level per track.
+**Screens:** language · theme · audio · vibration · romanization · daily goals (minutes + Conversation sentences + TOPIK questions) · active track · current level per track.
+
+**Daily goals**
+
+Three independent counters on `AppSettings`:
+
+| Field | Scope | Range | Default |
+|---|---|---|---|
+| `daily_goal_minutes` | All activity | 5–120 | 10 |
+| `daily_sentence_goal` | Conversation track — sentences studied | 1–200 | 10 |
+| `daily_question_goal` | TOPIK track — questions attempted | 1–200 | 10 |
+
+Users view progress against all three via `GET /dashboard/summary` (see §4.5); the response's `goals[]` array carries `current` and `target` for each, tagged with the relevant `track_id` for the per-track goals.
 
 **Endpoints**
 
 | Method & Path | Purpose |
 |---|---|
-| `GET /settings/me` | UI preferences |
-| `PUT /settings/me` | Update UI preferences |
+| `GET /settings/me` | UI preferences and daily goals |
+| `PUT /settings/me` | Update UI preferences and/or daily goals |
 | `GET /me/learning` | Read `current_level` per track (see 4.6) |
 | `PATCH /me/learning/{track_id}` | Change `current_level` in a track (see 4.6) |
 
 **Business rules**
 
 - Language change is propagated to `users.language` automatically.
-- `daily_goal_minutes` bounded 5–120.
+- `daily_goal_minutes` bounded 5–120. `daily_sentence_goal` and `daily_question_goal` bounded 1–200. Out-of-range values return `422 validation_error`.
 - Manual level changes delegate to `PATCH /me/learning/{track_id}`. Users may move up or down freely. Any such change **resets the in-flight promotion progress** on that track, so auto-promotion re-evaluates from scratch at the new level (see 4.6).
 
 ---
