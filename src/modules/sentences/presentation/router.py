@@ -68,6 +68,7 @@ def get_sentence(sentence_id: str, user: CurrentUser = Depends(get_current_user)
         korean="덕분에 잘 지내고 있어요.",
         display_text="덕분에 잘 ___ 있어요.",
         translation="Thanks to you, I'm doing well.",
+        translation_language="en",
         level=3,
         grammar_points=["덕분에"],
         audio=_stub_audio(sentence_id),

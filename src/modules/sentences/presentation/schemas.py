@@ -53,7 +53,15 @@ class Sentence(BaseModel):
     )
     blanks: list[SentenceBlank] = Field(default_factory=list)
     romanization: str | None = None
-    translation: str
+    translation: str = Field(
+        description="Meaning of the Korean sentence, rendered in the caller's default language."
+    )
+    translation_language: str = Field(
+        description=(
+            "BCP-47 code of `translation` — mirrors the caller's `users.language` (e.g. 'en', 'ja', "
+            "'zh-CN'). The server regenerates the translation whenever that preference changes."
+        ),
+    )
     topic: str | None = None
     level: int = Field(ge=1, le=10)
     audio: SentenceAudio | None = Field(
