@@ -144,15 +144,26 @@
 
 ### 4.2 사용자 프로필 및 검색 (`users`)
 
-**화면:** 프로필 편집 · 닉네임 중복 확인 · 아바타 선택 · 친구 검색.
+**화면:** 프로필 편집 · 닉네임 중복 확인 · 아바타 선택(사진 업로드 + 기본 캐릭터 갤러리) · 친구 검색.
+
+**아바타 선택**
+
+프로필 이미지는 두 가지 방법 중 하나로 등록한다:
+
+1. **사진 업로드** — 휴대폰에서 촬영 또는 선택한 이미지를 멀티파트로 업로드.
+2. **기본 캐릭터 선택** — 앱이 제공하는 캐릭터 카탈로그에서 하나를 선택해 `default_avatar_id`를 전송.
+
+두 방식 모두 응답 스키마는 동일한 `AvatarResponse`이며, `source ∈ {"uploaded", "default"}`와 최종 `avatar_url`을 포함한다.
 
 **엔드포인트**
 
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /users/me` | 내 프로필 스냅샷 |
-| `PATCH /users/me` | 닉네임 / 아바타 / 언어 변경 |
-| `POST /users/me/avatar` | 아바타 이미지 업로드 |
+| `PATCH /users/me` | 닉네임 / 언어 변경(avatar_url 직접 설정도 가능하나 아래 전용 엔드포인트를 권장) |
+| `GET /users/avatars/defaults` | 기본 캐릭터 아바타 카탈로그 조회 |
+| `POST /users/me/avatar` | 휴대폰 사진을 멀티파트로 업로드 |
+| `POST /users/me/avatar/default` | `default_avatar_id`로 기본 캐릭터 선택 |
 | `POST /users/check-nickname` | 닉네임 중복 확인 |
 | `GET /users/search?code=&nickname=` | 친구 코드 또는 닉네임으로 사용자 검색 |
 | `GET /users/{user_id}/profile` | 공개 학습 프로필 |
@@ -162,6 +173,9 @@
 
 - 닉네임은 대소문자 구분 없이 유일해야 한다.
 - `friend_code`는 사용자당 고유한 6–8자 코드로, 친구 추가에 사용.
+- 사진 업로드는 JPEG / PNG / WebP / HEIC 최대 5 MB를 허용하며, `file`이 없으면 `422 validation_error` 반환.
+- `POST /users/me/avatar/default`는 알 수 없는 `default_avatar_id`에 대해 `404 not_found`를 반환.
+- 두 아바타 설정 엔드포인트는 모두 `AvatarResponse`를 반환하며, 서버는 `avatar_url`과 함께 `source`(및 `default_avatar_id`)를 저장해 추후 카탈로그 갱신 시 최신 이미지를 다시 해석할 수 있게 한다.
 
 ---
 

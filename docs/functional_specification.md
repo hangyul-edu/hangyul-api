@@ -144,15 +144,26 @@ Each module below maps to a section of the Figma design, a module under `src/mod
 
 ### 4.2 User profile & discovery (`users`)
 
-**Screens:** profile edit · nickname uniqueness · avatar picker · friend search.
+**Screens:** profile edit · nickname uniqueness · avatar picker (photo upload + default-character gallery) · friend search.
+
+**Avatar picker**
+
+Users can register their profile image in either of two ways:
+
+1. **Upload a photo** — capture or pick an image from the phone and upload it as multipart.
+2. **Pick a default character** — choose one of the app's curated character avatars. The client first fetches the catalog, then submits the chosen `default_avatar_id`.
+
+The response schema (`AvatarResponse`) is the same for both paths and carries `source ∈ {"uploaded", "default"}` plus the resulting `avatar_url`.
 
 **Endpoints**
 
 | Method & Path | Purpose |
 |---|---|
 | `GET /users/me` | Authenticated profile snapshot |
-| `PATCH /users/me` | Update nickname / avatar / language |
-| `POST /users/me/avatar` | Upload avatar image |
+| `PATCH /users/me` | Update nickname / language (avatar_url can also be set directly but the dedicated endpoints below are preferred) |
+| `GET /users/avatars/defaults` | List the built-in default character avatars (catalog for the picker) |
+| `POST /users/me/avatar` | Multipart upload of a phone photo as the avatar |
+| `POST /users/me/avatar/default` | Pick a default character by `default_avatar_id` |
 | `POST /users/check-nickname` | Nickname uniqueness check |
 | `GET /users/search?code=&nickname=` | Search by friend code or nickname |
 | `GET /users/{user_id}/profile` | Public progress profile |
@@ -162,6 +173,9 @@ Each module below maps to a section of the Figma design, a module under `src/mod
 
 - Nickname is unique case-insensitively.
 - `friend_code` is a 6–8 char code unique per user; used for adding friends.
+- Photo upload accepts JPEG / PNG / WebP / HEIC, ≤ 5 MB; missing `file` returns `422 validation_error`.
+- `POST /users/me/avatar/default` rejects unknown `default_avatar_id` with `404 not_found`.
+- The two avatar-setting endpoints both return `AvatarResponse`, and the server stores `source` alongside `avatar_url` so that a future catalog refresh can re-resolve `default_avatar_id` to the latest image.
 
 ---
 
