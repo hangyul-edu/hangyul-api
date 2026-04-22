@@ -19,8 +19,8 @@ The service combines streak-driven daily sessions, adaptive recommendations, vid
 
 | Goal | Supporting features |
 |---|---|
-| Speak everyday Korean with confidence | Conversation track — level-based or prompt-driven sentence recommendations (e.g. "sentences for ordering food"), HangulAI chat, audio playback |
-| Practise TOPIK at my level and learn from mistakes | TOPIK track — level-based or prompt-driven question recommendations; AI chatbot automatically explains wrong answers |
+| Speak everyday Korean with confidence | Conversation track — AI-generated sentence recommendations at the user's current level, optionally refined by a prompt (e.g. "sentences for ordering food"), plus HangulAI chat and audio playback |
+| Practise TOPIK at my level and learn from mistakes | TOPIK track — AI-generated question recommendations at the user's current level, optionally refined by a prompt; AI chatbot automatically explains wrong answers |
 | Study at a difficulty that feels right | Auto-promotion when per-track criteria are met; users can also move `current_level` up or down freely from Settings (progress resets on every manual change) |
 | Keep a weekly rhythm with friends | Streaks, daily goal, reminders, 30-person weekly league (US Eastern, promote / maintain / demote), activity feed |
 | Self-serve help when stuck | FAQs, 1:1 inquiry, in-app announcements |
@@ -33,7 +33,7 @@ The service combines streak-driven daily sessions, adaptive recommendations, vid
 |---|---|---|
 | **Beginner Bea** | K-content fan; picking up Korean from scratch. | Onboarding (`purpose=conversation`, `speaking_level=beginner`) → Conversation Lv 1 sentence feed → streak + audio |
 | **Exam-focused Eun** | Working professional targeting TOPIK 3–4. | Onboarding (`purpose=topik`, `topik_target=4`) → TOPIK question recs at her level → AI chat unpacks every wrong answer |
-| **Prompt-driven Paul** | Intermediate learner with situation-specific goals. | `POST /recommendations/sentences` / `/questions` with free-form prompts ("sentences for a job interview", "피동 grammar questions"); bookmarks favorites |
+| **Prompt-refining Paul** | Intermediate learner with situation-specific goals. | Uses the on-screen prompt input to refine his level-based feed (e.g. "sentences for a job interview", "피동 grammar questions") — the server re-calls `POST /recommendations/...` with his current level + the prompt; bookmarks favorites |
 | **Busy Ben** | 10-minute commuter; wants short, audio-first sessions. | Dashboard daily goal → audio-led sentences → streak protection via freeze tokens |
 | **Competitive Chris** | Motivated by ranks and social pressure. | Weekly 30-person group leaderboard (US Eastern) → top 20 % to promote → friend-feed reactions |
 
@@ -284,7 +284,12 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 
 ### 4.7 Sentence study (`sentences`)
 
-Sentences are the recommended content type for the Conversation track. The feed is filtered by the user's Conversation `current_level` by default, and can also be driven by free-form prompt (see 4.18). Bookmarking, audio, and review-complete events continue to feed the Conversation auto-promotion criteria.
+Sentences are the recommended content type for the Conversation track; every recommendation is **AI-generated at the user's Conversation `current_level`** (see 4.18). Bookmarking, audio, and review-complete events feed the Conversation auto-promotion criteria.
+
+Two distinct UIs live on the sentence screen:
+
+1. **Prompt input (for recommendation refinement)** — a text field with a send button near the content card. Typing e.g. "sentences for a job interview" and pressing send re-calls `POST /recommendations/sentences` with the current level and the prompt; the new list replaces the feed.
+2. **Chatbot icon (for context-aware chat)** — a separate icon in the top-right. Tapping it calls `POST /ai/conversations` with `context.kind="sentence"`, `sentence_id=...`, and optionally `auto_assistant_reply=true` when the entry point is a pre-canned CTA (4.10).
 
 **Screens:** sentence list with audio, bookmark, grammar points · bookmarked list · recently studied.
 
@@ -310,7 +315,7 @@ Sentences are the recommended content type for the Conversation track. The feed 
 
 ### 4.8 Quizzes (`quizzes`)
 
-Quizzes are the recommended content type for the TOPIK track. Questions are pulled from the user's TOPIK `current_level` by default, and can also be requested via free-form prompt (see 4.18). **On an incorrect answer**, the server starts an AI-chat explanation conversation and returns its id in the attempt response; the client links the user into that chat to receive a richer explanation (see 4.10).
+Quizzes are the recommended content type for the TOPIK track. Every question is **AI-generated at the user's TOPIK `current_level`** (see 4.18). A prompt-input UI next to the question card lets the user refine what gets generated (e.g. "피동 grammar questions") — submitting it re-calls `POST /recommendations/questions` with the current level and the prompt. **On an incorrect answer**, the server does **not** pre-create a conversation; instead, the chatbot icon shows a CTA offering an explanation. Only when the user taps it does the client open an AI-chat conversation seeded with the attempt and receive the explanation (see 4.10).
 
 **Screens:** MCQ (덕분에/동안/처럼/만큼) · typing quiz with Korean keyboard · celebration / retry · "AI explains the mistake" deep link.
 
@@ -330,7 +335,7 @@ Quizzes are the recommended content type for the TOPIK track. Questions are pull
 - Attempt XP: +10 correct, 0 wrong; bonus +5 if streak of 5 correct in a row.
 - Daily set is deterministic per (user, date); safe to re-fetch.
 - Explanations localized by `language` query or profile default.
-- When a recommended TOPIK attempt is incorrect, the server starts an AI-chat conversation seeded with the question + the user's answer + the correct answer, and returns its `chatbot_conversation_id` in the attempt response. The client opens `/ai/conversations/{conversation_id}/messages` to continue.
+- When a recommended TOPIK attempt is incorrect, the attempt response carries no pre-built conversation. The client shows the chatbot icon with a CTA such as "Would you like an explanation of why it was incorrect or which part was confusing?". **Only when the user taps the CTA** does the client call `POST /ai/conversations` with `context.kind="quiz_attempt"`, `attempt_id=…`, `reason="explain_mistake"`, and `auto_assistant_reply=true`. The server then generates the explanation as the first assistant message in the new conversation, and the client navigates the user into it.
 - Correct TOPIK attempts feed the TOPIK auto-promotion criteria in the learning module.
 
 ---
@@ -357,7 +362,37 @@ Quizzes are the recommended content type for the TOPIK track. Questions are pull
 
 ### 4.10 한글AI chat (`ai-chat`)
 
-**Screens:** "물어보기" conversation with chat bubbles + suggestion chips · "AI explains the mistake" conversations launched from a wrong TOPIK attempt (4.8).
+**Screens:** "물어보기" conversation with chat bubbles + suggestion chips · chatbot icon (top-right) overlaid on every study screen · "AI explains the mistake" conversations launched from a wrong TOPIK attempt (4.8).
+
+> **Not the same as the recommendation prompt input.** Study screens also have a dedicated prompt-input field that drives the *recommendation* feed (see 4.7, 4.8, 4.18). The chatbot icon opens *this* module (conversational Q&A about the item). Both UIs may be visible at once; they are independent.
+
+**Context-aware start**
+
+Every study screen — sentence detail (4.7), quiz question (4.8), lecture player (4.6) — surfaces the chatbot icon. When the user taps it, the client starts a conversation **with structured context**, so the AI already knows what the user is looking at and the user does not need to retype anything.
+
+The context object:
+
+```json
+{
+  "kind": "sentence" | "quiz" | "quiz_attempt" | "lecture",
+  "sentence_id": "sen_…",
+  "quiz_id":     "quz_…",
+  "attempt_id":  "att_…",
+  "lecture_id":  "lec_…",
+  "reason": "explain_mistake" | "explain_item" | "grammar_help" | "vocabulary_help" | "custom"
+}
+```
+
+Only the fields relevant to `kind` are populated.
+
+**Assistant-first replies (no user prompt required)**
+
+`POST /ai/conversations` accepts `auto_assistant_reply: true`. When set, the server generates the first assistant message from `context` alone and returns it inline as `first_assistant_message`. This powers UI CTAs such as:
+
+- TOPIK wrong answer → chatbot icon shows "Would you like an explanation of why it was incorrect or which part was confusing?" → tap → conversation is created with `context.kind="quiz_attempt"` + `reason="explain_mistake"` + `auto_assistant_reply=true`, and the first assistant message (the explanation) is rendered immediately.
+- Sentence study → "What does this mean in a casual vs formal register?" → tap → conversation is created with `context.kind="sentence"` + `auto_assistant_reply=true`, and the first assistant message is already there.
+
+All of these flows share one server behavior: no conversation is created in advance. Conversations are created on user action (tapping the chatbot icon or a CTA chip), and `auto_assistant_reply=true` is what drives the server to produce a ready-to-show assistant message in the same response.
 
 **Endpoints**
 
@@ -568,12 +603,13 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 ### 4.18 Recommendations (`recommendations`)
 
-The primary surface for track content. Supports both *default* level-based recommendations and *prompt-driven* requests where the user asks for specific learning content.
+The primary surface for track content. **Both sentences and TOPIK questions are AI-generated** — every response is synthesized on demand, not pulled from a static catalog. Every recommendation is **grounded in the user's `current_level`** for the requested track; there is no separate "prompt-based mode". The client may additionally attach a free-form `prompt` that **refines** the recommendation (topic, scenario, grammar focus) within that level.
 
-**Recommendation modes**
+**On-screen prompt input**
 
-- **Level-based (default):** server uses the caller's `current_level` in the requested track plus recent history to pick items.
-- **Prompt-driven:** the client passes a free-form `prompt` such as "sentences I can use when ordering food" or "TOPIK 4급 level grammar questions about 피동". The server uses an LLM to interpret and select items that satisfy the request.
+On study screens, next to the content card, there is a prompt input field with a send button (visually and functionally distinct from the top-right chatbot icon, which drives the AI chat — see 4.10). Typing a request (e.g. "sentences for ordering food") and pressing send re-calls `POST /recommendations/sentences` (Conversation) or `POST /recommendations/questions` (TOPIK) with the user's `current_level` plus the typed prompt; the response replaces the current feed.
+
+If the user submits an empty prompt, the server regenerates at `current_level` with no extra constraint.
 
 **Endpoints**
 
@@ -586,7 +622,8 @@ The primary surface for track content. Supports both *default* level-based recom
 
 **Business rules**
 
-- If `level` is omitted, the user's current level in that track is used.
+- `level` is always applied. If `level` is omitted, the server substitutes the caller's `current_level` in the target track; clients should not send a level that differs from the user's current level unless they are intentionally previewing another difficulty.
+- `prompt` is an optional refinement. When present, the AI generates items that satisfy the prompt **while still respecting `level`**; when absent, the AI generates level-appropriate items using recent history as a signal.
 - `prompt` is capped at 500 chars and moderated before being sent to the LLM.
 - `count` defaults to 5, max 20.
 - Items returned by `/recommendations/questions` use the same `QuizQuestion` shape as §4.8; attempts are submitted through the quiz attempt endpoint.
@@ -645,7 +682,7 @@ Manual changes work in either direction. There is no automatic demotion, but eve
 | **Track** | Top-level learning split: Conversation (회화) or TOPIK. Each has its own `current_level`. |
 | **Current level** | The user's chosen difficulty for recommendations in a track. Auto-promotes on criteria; editable from Settings. |
 | **Level auto-promotion** | Server-side event raising `current_level` when per-track criteria are met. |
-| **Recommendation** | Server-picked content — sentences for Conversation, questions for TOPIK. May be level-based or prompt-driven. |
+| **Recommendation** | AI-generated content — sentences for Conversation, questions for TOPIK. Always grounded in the user's `current_level`; an optional `prompt` refines the request within that level. |
 | **Lecture** | Supplemental video / reading / listening unit, primarily for TOPIK; does not affect auto-promotion. |
 | **Sentence** | Smallest studyable item with audio and grammar tags. |
 | **Quiz** | MCQ / fill-blank / typing / ordering / listening. |
