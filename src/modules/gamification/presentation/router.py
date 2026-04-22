@@ -57,15 +57,23 @@ def get_points_history(
     return PointsHistoryResponse(items=[])
 
 
-@leagues_router.get("/me", response_model=MyLeaguePosition, summary="My league standing")
+@leagues_router.get(
+    "/me",
+    response_model=MyLeaguePosition,
+    summary="My league standing for the current season (tier, rank, score, band)",
+)
 def get_my_league(user: CurrentUser = Depends(get_current_user)) -> MyLeaguePosition:
+    season = _current_week_season()
     return MyLeaguePosition(
+        season_id=season.season_id,
         tier="green",
         tier_label="Green League",
         group_id="grp_green_01",
         group_size=30,
         rank=None,
-        points=0,
+        band=None,
+        season_points=0,
+        last_activity_at=None,
         promote_cutoff_rank=6,
         demote_cutoff_rank=25,
         can_promote=True,

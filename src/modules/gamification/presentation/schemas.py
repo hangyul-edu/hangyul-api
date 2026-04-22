@@ -38,12 +38,41 @@ class PointsHistoryResponse(BaseModel):
 
 
 class MyLeaguePosition(BaseModel):
+    season_id: str = Field(description="ISO-week label of the season this snapshot belongs to — e.g. '2026-W17'.")
     tier: LeagueTier
     tier_label: str
+
+    # Group + position within the group ------------------------------------------
     group_id: str
     group_size: int = 30
-    rank: int | None = Field(default=None, ge=1, le=30)
-    points: int
+    rank: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description=(
+            "My current rank inside the group (1 = first). Null until the first ranked event of "
+            "the season has been recorded."
+        ),
+    )
+    band: Literal["promote", "maintain", "demote"] | None = Field(
+        default=None,
+        description=(
+            "Where my rank falls today: 'promote' (ranks 1..promote_cutoff_rank), 'maintain' "
+            "(middle 60%), 'demote' (bottom 20%). Null while rank is null."
+        ),
+    )
+
+    # Score ---------------------------------------------------------------------
+    season_points: int = Field(
+        ge=0,
+        description="My accumulated season score (the value the leaderboard is sorted by, desc).",
+    )
+    last_activity_at: datetime | None = Field(
+        default=None,
+        description="Tie-break timestamp — when two entries share season_points, the later activity ranks higher.",
+    )
+
+    # Cutoffs + mobility --------------------------------------------------------
     promote_cutoff_rank: int = Field(default=6, description="Ranks 1–6 promote (top 20%).")
     demote_cutoff_rank: int = Field(default=25, description="Ranks 25–30 demote (bottom 20%).")
     can_promote: bool = True
