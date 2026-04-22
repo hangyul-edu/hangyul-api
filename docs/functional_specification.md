@@ -407,8 +407,8 @@ Two distinct UIs live on the sentence screen:
 | `GET /sentences/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | Saved-sentence list. Every item carries Korean + translation + `audio` so the list screen can render and replay in place. |
 | `GET /sentences/recently-studied` | Recency list |
 | `GET /sentences/{sentence_id}` | Sentence detail with examples |
-| `POST /sentences/{sentence_id}/bookmark` | Add bookmark |
-| `DELETE /sentences/{sentence_id}/bookmark` | Remove bookmark |
+| `POST /sentences/{sentence_id}/bookmark` | Save to the saved list — called from both the recommendation card and the in-lesson `conversation_speak` modal |
+| `DELETE /sentences/{sentence_id}/bookmark` | Remove from the saved list. Idempotent `204 No Content`; safe to call on an already-unsaved item |
 | `POST /sentences/{sentence_id}/listen` | Audio playback event (analytics + auto-promotion signal) |
 | `GET /sentences/{sentence_id}/audio` | Refresh the signed audio URL (e.g. after `expires_at`); replay normally uses the cached file |
 | `POST /sentences/{sentence_id}/speech-attempts` | Multipart upload of the user's spoken reading; returns correctness, ASR transcription, and pronunciation score |
@@ -420,6 +420,7 @@ Two distinct UIs live on the sentence screen:
 - The **save button** is the same action on a recommendation card and on an in-lesson popup (§4.6 `conversation_speak` modal): both call `POST /sentences/{sentence_id}/bookmark`. Saved items surface on the saved-list screen (`GET /sentences/bookmarks`) with full Korean text, `translation` in the user's language, and `audio` so each item is individually playable.
 - Every `Sentence` carries three server-maintained fields for saved-list sorting: `saved_at` (set on save), `incorrect_count` (incremented on each wrong speech-attempt), and `last_reviewed_at` (updated on any review — successful speech attempt, listen event, or re-open from the saved list).
 - `GET /sentences/bookmarks?sort=` accepts `recent` (default, `saved_at` desc), `most_incorrect` (`incorrect_count` desc), or `longest_not_reviewed` (`last_reviewed_at` asc with nulls first). Unknown values return `422 validation_error`.
+- Removing a sentence from the saved list (`DELETE /sentences/{sentence_id}/bookmark`) clears `saved_at` and drops the item from `GET /sentences/bookmarks`. `incorrect_count` and `last_reviewed_at` are preserved so the history reappears intact if the user saves the same sentence again later. The endpoint is idempotent — calling it on an item that is not currently saved still returns `204`.
 - `POST /sentences/{sentence_id}/speech-attempts` accepts audio up to 2 MB and 15 seconds. Requests without an `audio` file return `422 validation_error`. Each attempt mints an `attempt_id` for analytics / auto-promotion.
 - The client-side UI uses `correct=true` to render a blue confirmation; any `correct=false` variant renders a red "think again" prompt with a retry affordance.
 

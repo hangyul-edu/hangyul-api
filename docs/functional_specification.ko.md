@@ -407,8 +407,8 @@
 | `GET /sentences/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | 저장한 문장 목록. 각 항목에 한국어 + 번역 + `audio`가 포함되므로 리스트 화면에서 바로 표시·재생 가능 |
 | `GET /sentences/recently-studied` | 최근 학습 목록 |
 | `GET /sentences/{sentence_id}` | 예문·설명 포함 문장 상세 |
-| `POST /sentences/{sentence_id}/bookmark` | 북마크 추가 |
-| `DELETE /sentences/{sentence_id}/bookmark` | 북마크 해제 |
+| `POST /sentences/{sentence_id}/bookmark` | 저장 목록에 추가 — 추천 카드와 레슨 중 `conversation_speak` 모달에서 공유되는 동작 |
+| `DELETE /sentences/{sentence_id}/bookmark` | 저장 목록에서 제거. 멱등 `204 No Content`이며, 이미 해제된 항목에 호출해도 안전 |
 | `POST /sentences/{sentence_id}/listen` | 오디오 재생 이벤트 기록(분석 + 자동 승급 신호) |
 | `GET /sentences/{sentence_id}/audio` | 서명된 오디오 URL 재발급(`expires_at` 이후용, 일반 재생은 캐시 사용) |
 | `POST /sentences/{sentence_id}/speech-attempts` | 사용자의 읽기 녹음을 멀티파트 업로드 → 정오 판정·ASR 전사·발음 점수 반환 |
@@ -420,6 +420,7 @@
 - **저장 버튼**은 추천 카드와 레슨 중 팝업(§4.6 `conversation_speak`)에서 동일한 동작을 수행하며, 모두 `POST /sentences/{sentence_id}/bookmark`를 호출한다. 저장된 항목은 `GET /sentences/bookmarks`로 한 화면에 모아보며, 각 항목에는 한국어 본문과 사용자 언어 `translation`, 개별 재생이 가능한 `audio`가 포함된다.
 - 모든 `Sentence`는 저장 목록 정렬에 쓰이는 서버 관리 메타데이터 세 필드를 가진다: `saved_at`(저장 시점), `incorrect_count`(speech-attempt 오답 시 증가), `last_reviewed_at`(성공적인 speech-attempt, listen, 저장 목록 재오픈 등 모든 복습 이벤트에서 갱신).
 - `GET /sentences/bookmarks?sort=`는 `recent`(기본, `saved_at` 내림차순), `most_incorrect`(`incorrect_count` 내림차순), `longest_not_reviewed`(`last_reviewed_at` 오름차순, null 우선)을 받는다. 그 외 값은 `422 validation_error`.
+- 저장 목록에서 항목을 제거(`DELETE /sentences/{sentence_id}/bookmark`)하면 `saved_at`이 비워지고 해당 항목은 `GET /sentences/bookmarks`에서 빠진다. `incorrect_count`와 `last_reviewed_at`은 유지되므로 사용자가 같은 문장을 나중에 다시 저장하면 이력이 그대로 이어진다. 엔드포인트는 멱등이며, 이미 저장 상태가 아닌 항목에 호출해도 `204`를 반환한다.
 - `POST /sentences/{sentence_id}/speech-attempts`는 최대 2 MB, 15초 이하의 오디오만 허용한다. `audio` 파일이 없으면 `422 validation_error`를 반환한다. 모든 시도는 `attempt_id`로 기록되어 분석 / 자동 승급에 사용된다.
 - 클라이언트 UI는 `correct=true`일 때 파란 정답 메시지를, 그 외에는 빨간 "다시 생각해보고 재시도" 메시지와 재시도 버튼을 렌더링한다.
 
