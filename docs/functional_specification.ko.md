@@ -599,29 +599,40 @@
 
 ---
 
-### 4.12 소셜 — 친구 및 피드 (`social`)
+### 4.12 소셜 — 팔로우 및 피드 (`social`)
 
-**화면:** 친구 코드로 추가 · 받은/보낸 요청 · 친구 목록 · 친구 활동 피드 · 반응.
+**화면:** 친구 관리(팔로워 + 팔로잉 목록) · 연락처 매칭("내 주소록에서 한귤 쓰는 사람") · 활동 피드 · 반응.
+
+**팔로우 모델**
+
+연결은 **일방향 팔로우**다(요청/수락 단계 없음). 내가 상대를 팔로우할 수 있고, 그 관계가 상호일 수도 있고 아닐 수도 있다. 친구 관리 화면은 두 리스트를 동시에 보여주며, 각 항목의 `is_following` / `follows_me` 불리언으로 버튼 라벨을 정한다:
+
+| `is_following` | `follows_me` | 버튼 |
+|---|---|---|
+| false | false | 팔로우 |
+| false | true | **맞팔로우** |
+| true | false | 팔로잉 |
+| true | true | 팔로잉(상호) |
 
 **엔드포인트**
 
 | 메서드 & 경로 | 용도 |
 |---|---|
-| `GET /friends` | 내 친구 목록 |
-| `POST /friends` | 친구 요청 전송(코드 또는 user_id) |
-| `DELETE /friends/{friend_user_id}` | 친구 삭제 |
-| `GET /friends/requests` | 받은 / 보낸 요청 |
-| `POST /friends/requests/{request_id}/accept` | 수락 |
-| `POST /friends/requests/{request_id}/decline` | 거절 |
-| `GET /feed` | 친구 활동 피드 |
+| `GET /friends/connections` | 친구 관리 페이지 번들 — `{following[], following_count, followers[], followers_count}`. 모든 사용자 항목에 `is_following`과 `follows_me` 포함. |
+| `GET /friends/contact-matches` | 내 주소록에서 발견한 한귤 사용자. `settings.contact_access_granted == true` 필요(§4.17). 없으면 `403 forbidden`. |
+| `POST /friends/{user_id}/follow` | 사용자 팔로우(맞팔로우도 동일 엔드포인트 — 서버는 누구를 팔로우할지만 알면 됨). 멱등. |
+| `DELETE /friends/{user_id}/follow` | 연결 해제 — `user_id`에 대한 **언팔로우**. 반대 방향(상대가 나를 팔로우) 관계는 영향을 주지 않음. 멱등 `204`. |
+| `GET /feed` | 내가 팔로우하는 사람들의 활동 피드 |
 | `POST /feed/{feed_id}/reactions` | 이모지 반응 |
 
 **비즈니스 규칙**
 
-- 친구 최대 300명.
+- 팔로우는 방향성 관계다: A → B가 B → A를 의미하지 않는다. 연결 해제는 내 outgoing 엣지만 제거한다.
+- `is_following`·`follows_me`는 `SocialUser`가 등장하는 모든 응답에서 호출자 기준으로 계산된다. 클라이언트는 이 두 필드로만 UI 상태를 판단한다.
+- 연락처 매칭은 동의가 있어야 한다. `settings.contact_access_granted`가 false이면 `GET /friends/contact-matches`는 `403 forbidden`(detail "contact-access required")을 반환하며, 클라이언트는 "연락처 접근 허용" 모달을 먼저 띄우고 응답을 `PUT /settings/me/contact-access`로 저장한다(§4.17 참조).
+- 친구 코드 검색(`GET /users/search?code=`) 후 팔로우는 연락처 동의 여부와 **무관**하게 항상 가능하다.
 - 피드 아이템 타입: `level_up`, `streak`, `badge`, `league_promotion`, `friend_join`.
 - 반응은 이모지 shortcode 사용, 사용자당 분당 30회 제한.
-- 주소록 기반 친구 초대는 `settings.contact_access_granted == true`일 때만 가능하다(§4.17 참조). 동의가 없으면 클라이언트가 별도의 "연락처 접근 허용" 모달을 띄우고 그 응답을 `PUT /settings/me/contact-access`로 저장한다. 친구 코드 검색(`GET /users/search?code=`)은 이 플래그와 **무관**하게 항상 가능하다.
 
 ---
 
@@ -805,15 +816,7 @@ active ──해지──▶ active (cancel_at_period_end=true) ──current_pe
 12개월 일시불: trial → active ──expires_at──▶ expired   (자동 갱신 없음)
 ```
 
-### 5.4 친구 요청
-
-```
-pending ──수락──▶ accepted
-pending ──거절──▶ declined
-pending ──취소──▶ canceled
-```
-
-### 5.5 트랙 레벨 자동 승급
+### 5.4 트랙 레벨 자동 승급
 
 ```
 current_level N ──트랙 기준 충족──▶         current_level N+1   (LevelUpEvent 발생)

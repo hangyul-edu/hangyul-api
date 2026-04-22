@@ -599,29 +599,40 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 ---
 
-### 4.12 Social — friends & feed (`social`)
+### 4.12 Social — follows & feed (`social`)
 
-**Screens:** friend add by code · incoming/outgoing requests · friend list · friends activity feed · reactions.
+**Screens:** friend management page (followers + following lists) · contact-matches page ("people you know on Hangyul") · activity feed · reactions.
+
+**Follow model**
+
+Connections are **unilateral follows** (no request/accept dance). The caller can follow a user, and that follow can be mutual or not. The friend management page shows two lists and uses the `is_following` / `follows_me` booleans on each entry to decide the action button label:
+
+| `is_following` | `follows_me` | Button |
+|---|---|---|
+| false | false | Follow |
+| false | true | **Follow back** |
+| true | false | Following |
+| true | true | Following (mutual) |
 
 **Endpoints**
 
 | Method & Path | Purpose |
 |---|---|
-| `GET /friends` | My friends |
-| `POST /friends` | Send request (by code or user_id) |
-| `DELETE /friends/{friend_user_id}` | Remove friend |
-| `GET /friends/requests` | Incoming & outgoing requests |
-| `POST /friends/requests/{request_id}/accept` | Accept |
-| `POST /friends/requests/{request_id}/decline` | Decline |
-| `GET /feed` | Friend activity feed |
+| `GET /friends/connections` | Friend management page bundle — `{following[], following_count, followers[], followers_count}`. Every user carries `is_following` + `follows_me`. |
+| `GET /friends/contact-matches` | Hangyul users found in the caller's phone contacts. Requires `settings.contact_access_granted == true` (§4.17); otherwise `403 forbidden`. |
+| `POST /friends/{user_id}/follow` | Follow a user (same endpoint as "Follow back" — the server only needs to know *who* to follow). Idempotent. |
+| `DELETE /friends/{user_id}/follow` | Remove the connection — an unfollow toward `user_id`. Does **not** touch the reverse edge if that user follows the caller. Idempotent `204`. |
+| `GET /feed` | Activity feed from the users the caller follows |
 | `POST /feed/{feed_id}/reactions` | React with emoji |
 
 **Business rules**
 
-- Friends capped at 300 per user.
+- Following is directional: A → B does not imply B → A. Removing a connection only removes the caller's outgoing edge.
+- `is_following` and `follows_me` are computed per caller on every response that carries a `SocialUser`; clients should not infer them from any other field.
+- Contact-matches require consent. `GET /friends/contact-matches` returns `403 forbidden` (detail "contact-access required") if `settings.contact_access_granted` is false — the client shows the dedicated allow-contacts modal first and persists the answer via `PUT /settings/me/contact-access` (§4.17).
+- Finding a specific user by friend code (`GET /users/search?code=`) and following them does **not** require contact-access consent — only the phone-contacts match path does.
 - Feed item types: `level_up`, `streak`, `badge`, `league_promotion`, `friend_join`.
 - Reactions use emoji shortcodes; rate-limited to 30 / min / user.
-- Inviting friends from the phone's address book requires `settings.contact_access_granted == true` (see §4.17). When the caller has not granted consent, the client shows the dedicated allow-contacts modal and persists the answer via `PUT /settings/me/contact-access`; friend-by-code lookups (`GET /users/search?code=`) do **not** require this flag — only the contact-address-book path does.
 
 ---
 
@@ -805,15 +816,7 @@ active ──cancel──▶ active (cancel_at_period_end=true) ──current_pe
 one_time plan: trial → active ──expires_at──▶ expired   (no automatic renewal)
 ```
 
-### 5.4 Friend request
-
-```
-pending ──accept──▶ accepted
-pending ──decline──▶ declined
-pending ──cancel──▶ canceled
-```
-
-### 5.5 Track level auto-promotion
+### 5.4 Track level auto-promotion
 
 ```
 current_level N ──per-track criteria met──▶  current_level N+1   (emits LevelUpEvent)
