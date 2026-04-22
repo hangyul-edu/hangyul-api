@@ -288,6 +288,8 @@
 
 **모든 추천 문장은 해당 문장의 AI 생성 발음 오디오를 함께 포함한다.** 응답 페이로드에 중첩 `audio` 객체(서명된 CDN URL + 포맷 + 길이 + voice + `expires_at`)가 들어 있다. 클라이언트는 파일을 로컬에 캐시하고, 앱 내 재생(replay) 버튼은 캐시된 파일을 재생하므로 추가 API 호출이 없다.
 
+**모든 추천 문장에는 사용자의 기본 언어로 번역된 의미도 함께 포함된다.** 각 `Sentence`는 `translation`(번역문)과 `translation_language`(BCP-47, `users.language`와 일치 — 예: `en`, `ja`, `zh-CN`)를 가진다. 사용자가 `users.language`를 변경하면 이후의 추천은 새 언어로 재생성된다.
+
 **읽기 플로우**
 
 1. 문장이 도착하면 클라이언트가 `audio`를 한 번 자동 재생한다.
@@ -650,7 +652,9 @@
 - `prompt`는 최대 500자, LLM 전송 전에 모더레이션을 거친다.
 - `count` 기본값 5, 최대 20.
 - `/recommendations/questions` 결과 항목은 §4.8의 `QuizQuestion`과 동일 구조를 사용하며, 풀이는 퀴즈 풀이 엔드포인트로 제출한다.
-- `/recommendations/sentences` 결과 항목은 §4.7의 `Sentence`와 동일 구조를 사용하며, 중첩 `audio` 객체(AI TTS — 서명 URL + 포맷 + 길이 + `expires_at`)를 항상 포함한다. 클라이언트는 파일을 로컬에 캐시해 재생 버튼에서 재사용하고, URL 만료 시에만 `GET /sentences/{sentence_id}/audio`를 호출한다.
+- `/recommendations/sentences` 결과 항목은 §4.7의 `Sentence`와 동일 구조를 사용하며 다음을 항상 포함한다:
+  - 중첩 `audio` 객체(AI TTS — 서명 URL + 포맷 + 길이 + `expires_at`). 클라이언트는 파일을 로컬에 캐시해 재생 버튼에서 재사용하며, 만료된 경우에만 `GET /sentences/{sentence_id}/audio`를 호출한다.
+  - 사용자의 `users.language`로 번역된 `translation` + `translation_language`. 덕분에 UI는 한국어 문장과 번역을 추가 API 없이 같이 보여줄 수 있다.
 - 북마크·재생·읽기 시도 이벤트는 문장 엔드포인트로 전송된다.
 
 ---

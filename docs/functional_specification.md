@@ -288,6 +288,8 @@ Sentences are the recommended content type for the Conversation track; every rec
 
 **Each recommended sentence ships with its own AI-generated pronunciation audio.** The response payload includes a nested `audio` object — a signed CDN URL plus format, duration, voice, and an `expires_at`. The client caches the audio file locally; the in-app replay button plays the local file with no extra API call.
 
+**Each recommended sentence also ships with a translation in the user's selected default language.** Every `Sentence` carries `translation` (the rendered meaning) together with `translation_language` (BCP-47, mirrors `users.language` — e.g. `en`, `ja`, `zh-CN`). When the user updates `users.language`, subsequent recommendations are regenerated in the new language.
+
 **Read-aloud flow**
 
 1. Sentence arrives → client auto-plays `audio` once.
@@ -650,7 +652,9 @@ If the user submits an empty prompt, the server regenerates at `current_level` w
 - `prompt` is capped at 500 chars and moderated before being sent to the LLM.
 - `count` defaults to 5, max 20.
 - Items returned by `/recommendations/questions` use the same `QuizQuestion` shape as §4.8; attempts are submitted through the quiz attempt endpoint.
-- Items returned by `/recommendations/sentences` use the same `Sentence` shape as §4.7 and always include the nested `audio` object (AI-generated TTS with a signed URL + format + duration + `expires_at`). Clients cache the file locally for the replay button; no extra API call is needed unless the URL has expired (`GET /sentences/{sentence_id}/audio`).
+- Items returned by `/recommendations/sentences` use the same `Sentence` shape as §4.7 and always include:
+  - the nested `audio` object (AI-generated TTS — signed URL, format, duration, `expires_at`); clients cache the file locally for the replay button and only call `GET /sentences/{sentence_id}/audio` to refresh after expiry.
+  - `translation` + `translation_language` in the caller's `users.language`, so the UI can show the Korean line and its meaning side by side without an extra localization call.
 - Bookmarks, listen events, and speech attempts flow through the sentence endpoints.
 
 ---
