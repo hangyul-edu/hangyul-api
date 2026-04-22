@@ -141,15 +141,27 @@ class LectureVideoResponse(BaseModel):
 
 
 class LectureProgressRequest(BaseModel):
-    position_seconds: int = Field(ge=0)
-    completed: bool = False
+    position_seconds: int = Field(ge=0, description="Current playback offset in seconds. Sent periodically as a heartbeat.")
 
 
 class LectureProgressResponse(BaseModel):
     lecture_id: str
     position_seconds: int
-    completed: bool
-    xp_earned: int = 0
+    completed: bool = Field(description="Current completion state (read-only here — set via POST /lectures/{id}/complete).")
+
+
+class LectureCompletionResponse(BaseModel):
+    lecture_id: str
+    completed: bool = Field(description="Always true in the success response.")
+    already_completed: bool = Field(
+        description="True when the caller previously completed this lecture — in which case xp_earned is 0."
+    )
+    xp_earned: int = Field(ge=0, description="XP granted by this call. 0 on repeat completions.")
+    completed_at: datetime
+    level_up_event: LevelUpEvent | None = Field(
+        default=None,
+        description="Populated when this completion triggered TOPIK auto-promotion (see 4.6).",
+    )
 
 
 class CalendarDay(BaseModel):

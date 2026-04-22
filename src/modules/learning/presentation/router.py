@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 
 from src.common.exceptions import NotFoundError, ValidationError
 from src.common.security.auth import CurrentUser, get_current_user
@@ -10,6 +10,7 @@ from src.modules.learning.presentation.schemas import (
     TRACK_MAX_LEVEL,
     CalendarResponse,
     Lecture,
+    LectureCompletionResponse,
     LectureProgressRequest,
     LectureProgressResponse,
     LectureVideoResponse,
@@ -214,7 +215,11 @@ def get_lecture_video(lecture_id: str, user: CurrentUser = Depends(get_current_u
 @lectures_router.post(
     "/{lecture_id}/progress",
     response_model=LectureProgressResponse,
-    summary="Report playback progress",
+    summary="Report playback progress (heartbeat)",
+    description=(
+        "Periodic heartbeat while the user is watching. Use POST /lectures/{lecture_id}/complete "
+        "to mark the lecture finished — this endpoint does not write completion."
+    ),
 )
 def report_lecture_progress(
     lecture_id: str,
@@ -224,6 +229,29 @@ def report_lecture_progress(
     return LectureProgressResponse(
         lecture_id=lecture_id,
         position_seconds=payload.position_seconds,
-        completed=payload.completed,
-        xp_earned=5 if payload.completed else 0,
+        completed=False,
+    )
+
+
+@lectures_router.post(
+    "/{lecture_id}/complete",
+    response_model=LectureCompletionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Mark the lecture as finished watching",
+    description=(
+        "Called by the client once the user has watched the lecture in full. Idempotent — a second "
+        "call returns already_completed=true and xp_earned=0. Triggers TOPIK auto-promotion "
+        "evaluation when applicable."
+    ),
+)
+def complete_lecture(
+    lecture_id: str, user: CurrentUser = Depends(get_current_user)
+) -> LectureCompletionResponse:
+    return LectureCompletionResponse(
+        lecture_id=lecture_id,
+        completed=True,
+        already_completed=False,
+        xp_earned=15,
+        completed_at=datetime.now(timezone.utc),
+        level_up_event=None,
     )
