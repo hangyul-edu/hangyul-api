@@ -79,6 +79,18 @@ LectureAccess = Literal["free", "premium"]
 LecturePopupKind = Literal["conversation_speak", "topik_question"]
 
 
+class LectureMyPlayback(BaseModel):
+    last_position_seconds: int = Field(
+        ge=0,
+        description=(
+            "How far the caller last watched. Updated by every POST /lectures/{id}/progress "
+            "heartbeat. Clients seek to this offset on resume."
+        ),
+    )
+    last_watched_at: datetime = Field(description="Timestamp of the most recent progress heartbeat.")
+    completed: bool = Field(default=False, description="Mirrors Lecture.completed for convenience.")
+
+
 class LecturePopup(BaseModel):
     popup_id: str = Field(description="Stable id for analytics and idempotent client replay.")
     kind: LecturePopupKind = Field(
@@ -127,6 +139,13 @@ class Lecture(BaseModel):
             "popups with kind == 'conversation_speak' (topik_question popups still fire)."
         ),
     )
+    my_playback: LectureMyPlayback | None = Field(
+        default=None,
+        description=(
+            "Caller-scoped playback state. Null when the user has never started this lecture. "
+            "Clients resume from `my_playback.last_position_seconds` on re-entry."
+        ),
+    )
 
 
 class LecturesResponse(BaseModel):
@@ -146,7 +165,8 @@ class LectureProgressRequest(BaseModel):
 
 class LectureProgressResponse(BaseModel):
     lecture_id: str
-    position_seconds: int
+    position_seconds: int = Field(description="Echoes the saved position after this heartbeat.")
+    last_watched_at: datetime = Field(description="Server timestamp of the heartbeat.")
     completed: bool = Field(description="Current completion state (read-only here — set via POST /lectures/{id}/complete).")
 
 

@@ -173,7 +173,7 @@ def list_lectures(
 
 @lectures_router.get("/{lecture_id}", response_model=Lecture, summary="Get lecture detail")
 def get_lecture(lecture_id: str, user: CurrentUser = Depends(get_current_user)) -> Lecture:
-    from src.modules.learning.presentation.schemas import LecturePopup
+    from src.modules.learning.presentation.schemas import LectureMyPlayback, LecturePopup
 
     return Lecture(
         lecture_id=lecture_id,
@@ -196,6 +196,11 @@ def get_lecture(lecture_id: str, user: CurrentUser = Depends(get_current_user)) 
                 quiz_id="quz_hello_01",
             ),
         ],
+        my_playback=LectureMyPlayback(
+            last_position_seconds=0,
+            last_watched_at=datetime.now(timezone.utc),
+            completed=False,
+        ),
     )
 
 
@@ -229,6 +234,7 @@ def report_lecture_progress(
     return LectureProgressResponse(
         lecture_id=lecture_id,
         position_seconds=payload.position_seconds,
+        last_watched_at=datetime.now(timezone.utc),
         completed=False,
     )
 
