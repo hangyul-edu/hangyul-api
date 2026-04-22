@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
+from src.common.api.membership import MembershipSummary
+
 
 class UserProfileResponse(BaseModel):
     user_id: str
@@ -45,7 +47,9 @@ class MeResponse(BaseModel):
     tier: str = Field(default="green", description="Current league tier")
     points: int = 0
     streak_days: int = 0
-    subscription_active: bool = False
+    membership: MembershipSummary = Field(
+        description="Subscription tier summary. Same shape as returned by login endpoints."
+    )
     created_at: datetime
 
 

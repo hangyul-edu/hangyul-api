@@ -40,3 +40,10 @@ class ConflictError(AppError):
 class RateLimitedError(AppError):
     status_code = 429
     error_code = "rate_limited"
+
+
+class SubscriptionRequiredError(AppError):
+    """Raised when a non-premium user hits a premium-only path or exhausts the free quota."""
+
+    status_code = 402
+    error_code = "subscription_required"

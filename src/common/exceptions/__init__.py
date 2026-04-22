@@ -4,6 +4,7 @@ from src.common.exceptions.base import (
     ForbiddenError,
     NotFoundError,
     RateLimitedError,
+    SubscriptionRequiredError,
     UnauthorizedError,
     ValidationError,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "ForbiddenError",
     "NotFoundError",
     "RateLimitedError",
+    "SubscriptionRequiredError",
     "UnauthorizedError",
     "ValidationError",
 ]

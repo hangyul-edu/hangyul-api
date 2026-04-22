@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, status
 
 from src.common.security.auth import CurrentUser, get_current_user
 from src.modules.recommendations.infrastructure.container import AppContainer, get_container
+from src.common.api.membership import MembershipSummary
 from src.common.exceptions import NotFoundError
 from src.modules.users.presentation.schemas import (
     AvatarResponse,
@@ -60,7 +61,7 @@ def get_me(user: CurrentUser = Depends(get_current_user)) -> MeResponse:
         tier="green",
         points=0,
         streak_days=0,
-        subscription_active=False,
+        membership=MembershipSummary(tier="free", is_premium=False, expires_at=None),
         created_at=datetime.now(timezone.utc),
     )
 

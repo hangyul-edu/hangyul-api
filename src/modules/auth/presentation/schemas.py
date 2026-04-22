@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
+from src.common.api.membership import MembershipSummary
+
 SocialProvider = Literal["google", "apple", "kakao", "facebook", "line"]
 PhoneVerificationPurpose = Literal["signup", "recover_email", "reset_password", "change_phone"]
 
@@ -69,6 +71,9 @@ class TokenResponse(BaseModel):
     expires_in: int = Field(description="Access-token lifetime in seconds.")
     user_id: str
     is_new_user: bool = False
+    membership: "MembershipSummary" = Field(
+        description="Current subscription tier at login — so the client can render gated UI immediately.",
+    )
 
 
 class RefreshTokenRequest(BaseModel):

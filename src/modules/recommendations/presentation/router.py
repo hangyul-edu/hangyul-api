@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query, status
 
 from src.common.security.auth import CurrentUser, get_current_user
@@ -10,11 +12,25 @@ from src.modules.recommendations.presentation.schemas import (
     QuestionRecommendationRequest,
     QuestionRecommendationResponse,
     RecommendationHistoryResponse,
+    RecommendationQuota,
     RecommendationRequestSchema,
     RecommendationResponseSchema,
     SentenceRecommendationRequest,
     SentenceRecommendationResponse,
 )
+
+
+FREE_DAILY_RECOMMENDATION_LIMIT = 5
+
+
+def _stub_quota_free() -> RecommendationQuota:
+    midnight = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return RecommendationQuota(
+        daily_limit=FREE_DAILY_RECOMMENDATION_LIMIT,
+        used_today=0,
+        remaining_today=FREE_DAILY_RECOMMENDATION_LIMIT,
+        resets_at=midnight,
+    )
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -54,7 +70,9 @@ def recommend_sentences(
     user: CurrentUser = Depends(get_current_user),
 ) -> SentenceRecommendationResponse:
     level = payload.level if payload.level is not None else 1
-    return SentenceRecommendationResponse(level=level, prompt=payload.prompt, items=[])
+    return SentenceRecommendationResponse(
+        level=level, prompt=payload.prompt, items=[], quota=_stub_quota_free()
+    )
 
 
 @router.post(
@@ -68,7 +86,9 @@ def recommend_questions(
     user: CurrentUser = Depends(get_current_user),
 ) -> QuestionRecommendationResponse:
     level = payload.level if payload.level is not None else 1
-    return QuestionRecommendationResponse(level=level, prompt=payload.prompt, items=[])
+    return QuestionRecommendationResponse(
+        level=level, prompt=payload.prompt, items=[], quota=_stub_quota_free()
+    )
 
 
 @router.get(

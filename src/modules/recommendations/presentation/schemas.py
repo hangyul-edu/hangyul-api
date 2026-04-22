@@ -1,11 +1,32 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from src.modules.quizzes.presentation.schemas import QuizQuestion
 from src.modules.sentences.presentation.schemas import Sentence
+
+
+class RecommendationQuota(BaseModel):
+    daily_limit: int | None = Field(
+        description=(
+            "Maximum AI-recommended items a user may receive per day. Null for premium / trial "
+            "members (no limit). Non-subscribed members are capped at 5 per day across sentences "
+            "and questions combined."
+        ),
+    )
+    used_today: int = Field(ge=0, description="Items already granted to this user today.")
+    remaining_today: int | None = Field(
+        description=(
+            "daily_limit - used_today. Null for unlimited quotas. When this reaches 0, further "
+            "calls return 402 subscription_required with an upsell payload."
+        ),
+    )
+    resets_at: datetime = Field(
+        description="When the quota counter rolls over (start of the user's next local day).",
+    )
 
 
 class RecommendationRequestSchema(BaseModel):
@@ -52,6 +73,9 @@ class SentenceRecommendationResponse(BaseModel):
     level: int
     prompt: str | None = None
     items: list[Sentence]
+    quota: RecommendationQuota = Field(
+        description="Caller's remaining AI-recommendation allowance after this response.",
+    )
 
 
 class QuestionRecommendationRequest(BaseModel):
@@ -81,6 +105,9 @@ class QuestionRecommendationResponse(BaseModel):
     level: int
     prompt: str | None = None
     items: list[QuizQuestion]
+    quota: RecommendationQuota = Field(
+        description="Caller's remaining AI-recommendation allowance after this response.",
+    )
 
 
 class RecommendationHistoryItem(BaseModel):

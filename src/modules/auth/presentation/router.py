@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
+from src.common.api.membership import MembershipSummary
 from src.common.config.settings import get_settings
 from src.common.security.auth import CurrentUser, get_current_user
 from src.common.security.tokens import create_token
@@ -39,6 +40,7 @@ def _issue_tokens(user_id: str, is_new_user: bool = False) -> TokenResponse:
         expires_in=settings.access_token_ttl_minutes * 60,
         user_id=user_id,
         is_new_user=is_new_user,
+        membership=MembershipSummary(tier="free", is_premium=False, expires_at=None),
     )
 
 

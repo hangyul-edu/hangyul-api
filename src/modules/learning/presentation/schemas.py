@@ -75,6 +75,9 @@ class LevelUpEventsResponse(BaseModel):
     next_cursor: str | None = None
 
 
+LectureAccess = Literal["free", "premium"]
+
+
 class Lecture(BaseModel):
     lecture_id: str
     track_id: str
@@ -84,6 +87,14 @@ class Lecture(BaseModel):
     duration_seconds: int
     thumbnail_url: str | None = None
     completed: bool = False
+    access: LectureAccess = Field(
+        default="free",
+        description=(
+            "'free' lectures are visible to all members. 'premium' lectures require trial or paid "
+            "membership; non-premium callers get the metadata but receive 402 subscription_required "
+            "when they request the video URL."
+        ),
+    )
 
 
 class LecturesResponse(BaseModel):
