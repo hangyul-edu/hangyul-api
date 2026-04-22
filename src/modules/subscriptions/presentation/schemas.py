@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 PlanInterval = Literal["month", "year"]
-BillingMode = Literal["recurring", "one_time"]
 BillingProvider = Literal["stripe", "apple", "google"]
 SubscriptionStatus = Literal["trial", "active", "past_due", "canceled", "expired"]
 
@@ -19,13 +18,9 @@ class SubscriptionPlan(BaseModel):
     currency: str = "USD"
     interval: PlanInterval = Field(
         description=(
-            "Billing cadence. 'month' = auto-renewing monthly; 'year' = single 12-month charge."
-        )
-    )
-    billing_mode: BillingMode = Field(
-        description=(
-            "Whether the plan auto-renews. Monthly plans are 'recurring'; the 12-month plan is "
-            "'one_time' — a single charge covering 12 months of access, no automatic renewal."
+            "Auto-renewal cadence. 'month' = auto-renewing every month; 'year' = auto-renewing "
+            "every 12 months. Both plans auto-renew on the card registered to the account unless "
+            "the user cancels."
         )
     )
     trial_days: int = Field(
@@ -47,10 +42,8 @@ class MySubscription(BaseModel):
     status: SubscriptionStatus
     provider: BillingProvider | None = None
     interval: PlanInterval | None = Field(
-        default=None, description="Cadence of the active plan. Null until a plan is chosen."
-    )
-    billing_mode: BillingMode | None = Field(
-        default=None, description="Whether the active plan auto-renews or was a one-time 12-month charge."
+        default=None,
+        description="Auto-renewal cadence of the active plan (`month` or `year`). Null until a plan is chosen.",
     )
 
     # Trial lifecycle ------------------------------------------------------------
@@ -78,6 +71,14 @@ class MySubscription(BaseModel):
     current_period_end: datetime | None = Field(
         default=None,
         description="End of the current paid billing cycle (monthly plan).",
+    )
+    next_billing_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Date of the next scheduled auto-renewal charge — equals `current_period_end` while "
+            "auto-renewal is on (for both monthly and yearly plans). Null after "
+            "`cancel_at_period_end=true`, or when `status ∈ {'canceled', 'expired'}`."
+        ),
     )
 
     # Canonical access expiration ------------------------------------------------
@@ -121,6 +122,14 @@ class Purchase(BaseModel):
     purchase_id: str
     plan_id: str
     plan_name: str
+    description: str = Field(
+        description=(
+            "Human-readable line for the payment-history UI — e.g. "
+            "'Hangyul Annual Subscription 2025.01.01 ~ 2026.01.01' or "
+            "'Hangyul Monthly Subscription 2025.01.01 ~ 2025.02.01'. Localized to the caller's "
+            "`users.language`."
+        )
+    )
     amount_cents: int
     currency: str
     purchased_at: datetime

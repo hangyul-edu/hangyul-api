@@ -26,21 +26,19 @@ def list_plans() -> PlansResponse:
             SubscriptionPlan(
                 plan_id="plan_monthly",
                 name="Monthly",
-                description="Auto-renews every month.",
+                description="Auto-renews every month until cancelled.",
                 price_cents=799,
                 promo_price_cents=599,
                 interval="month",
-                billing_mode="recurring",
                 trial_days=7,
                 features=["모든 레슨", "AI 한글 튜터", "광고 제거"],
             ),
             SubscriptionPlan(
                 plan_id="plan_yearly",
                 name="Yearly",
-                description="One-time 12-month payment; no automatic renewal.",
+                description="Auto-renews every 12 months until cancelled.",
                 price_cents=5400,
                 interval="year",
-                billing_mode="one_time",
                 trial_days=7,
                 features=["모든 레슨", "AI 한글 튜터", "광고 제거", "프리미엄 콘텐츠"],
             ),
@@ -48,20 +46,24 @@ def list_plans() -> PlansResponse:
     )
 
 
-@router.get("/me", response_model=MySubscription, summary="Get my subscription and trial state")
+@router.get(
+    "/me",
+    response_model=MySubscription,
+    summary="Subscription-management page bundle (plan, next billing date, trial, access expiration)",
+)
 def get_my_subscription(user: CurrentUser = Depends(get_current_user)) -> MySubscription:
     return MySubscription(
         subscription_id=None,
         plan_id=None,
         status="expired",
         interval=None,
-        billing_mode=None,
         trial_started=False,
         trial_started_at=None,
         trial_expires_at=None,
         in_trial=False,
         current_period_start=None,
         current_period_end=None,
+        next_billing_at=None,
         expires_at=None,
         cancel_at_period_end=False,
     )
@@ -82,7 +84,17 @@ def create_checkout(payload: CheckoutRequest, user: CurrentUser = Depends(get_cu
     )
 
 
-@router.post("/cancel", response_model=CancelResponse, summary="Cancel active subscription")
+@router.post(
+    "/cancel",
+    response_model=CancelResponse,
+    summary="Cancel auto-renewal; premium access continues until expires_at",
+    description=(
+        "Stops the next auto-renewal charge for both monthly and yearly plans. Flips "
+        "`cancel_at_period_end=true` and clears `next_billing_at`. The user keeps premium access "
+        "until `expires_at` (= the final `current_period_end` — 1 month or 12 months out, "
+        "depending on the plan). Cancellation never immediately revokes access."
+    ),
+)
 def cancel_subscription(user: CurrentUser = Depends(get_current_user)) -> CancelResponse:
     period_end = datetime.now(timezone.utc) + timedelta(days=30)
     return CancelResponse(
