@@ -253,6 +253,19 @@
 
 `current_period_start` / `current_period_end`는 월간 요금제의 결제 주기를 나타내며, 12개월 일시불의 경우 각각 시작일과 `expires_at`과 일치할 수 있다.
 
+**다음 결제일**
+
+`next_billing_at`은 다음 자동 갱신 결제일 — 구독 관리 페이지가 "다음 결제일"로 표시하는 필드다. 자동 결제가 예정되어 있지 않을 때는 null이다:
+
+- 월간 자동 갱신 진행 중 → `current_period_end`와 동일.
+- 월간 요금제에서 `POST /subscriptions/cancel` 이후 → null(자동 갱신이 꺼짐).
+- 12개월 일시불 → null(자동 갱신 자체가 없음).
+- `status ∈ {"canceled", "expired"}` → null.
+
+**결제 내역**
+
+`GET /subscriptions/purchases`가 결제 내역 화면을 채운다. 각 `Purchase`는 `purchased_at`, 서버가 사용자 언어로 생성한 `description`(예: `"Hangyul Annual Subscription 2025.01.01 ~ 2026.01.01"`), `amount_cents` + `currency`, `provider`, 선택적 `receipt_url`을 포함한다.
+
 **엔드포인트**
 
 | 메서드 & 경로 | 용도 |
@@ -267,8 +280,9 @@
 **비즈니스 규칙**
 
 - 7일 체험은 사용자당 1회(최초 가입 시)만 제공된다. `trial_started=true`가 되면 이후 어떤 요금제로도 재체험이 불가능하다.
-- 월간 요금제: `billing_mode="recurring"`. 해지 시 `cancel_at_period_end=true`로 표시되고 `current_period_end`까지 이용 유지.
-- 12개월 요금제: `billing_mode="one_time"`. 자동 갱신이 없으므로 해지에 결제상 효과는 없지만, UI 일관성을 위해 해지 동작은 동일하게 제공할 수 있다.
+- **해지는 즉시 이용을 중단시키지 않는다.** `POST /subscriptions/cancel`은 등록된 카드에 걸려 있는 자동 결제만 중지한다. 사용자는 `expires_at`(= 마지막으로 결제된 주기의 종료 시각)까지 프리미엄을 그대로 이용한다.
+- 월간 요금제(`billing_mode="recurring"`): 해지 시 `cancel_at_period_end=true`로 표시되고 `next_billing_at`은 null이 되며, 이미 결제된 주기의 끝을 `expires_at`으로 반환한다.
+- 12개월 요금제(`billing_mode="one_time"`): 중단할 자동 갱신이 없으므로 해지 엔드포인트는 no-op이며 UI 일관성을 위해 기존 `expires_at`을 그대로 반환한다.
 - Apple / Google 결제는 영수증으로 서버 검증, Stripe는 웹훅으로 검증. 어느 공급자든 `MySubscription` 응답 구조는 동일하다.
 - 클라이언트는 "구독 중인가?"를 판정할 때 단일 필드가 아니라 `status in {"trial", "active"}`와 `expires_at > now`를 함께 본다.
 

@@ -253,6 +253,19 @@ Every user is eligible for a **7-day free trial** the first time they sign up fo
 
 `current_period_start` / `current_period_end` describe the billing cycle for the monthly plan; on the yearly one-time plan they may be equal to the start and `expires_at` respectively.
 
+**Next billing date**
+
+`next_billing_at` is the date of the next scheduled auto-renewal charge — the field the subscription-management page shows as "Next billing date". It is null whenever no auto-charge is queued:
+
+- On a live recurring monthly plan → equals `current_period_end`.
+- After `POST /subscriptions/cancel` on a monthly plan → null (auto-renewal is off).
+- On the 12-month one-time plan → null (the plan never auto-renews).
+- For `status ∈ {"canceled", "expired"}` → null.
+
+**Payment history**
+
+`GET /subscriptions/purchases` drives the payment-history list. Each `Purchase` carries `purchased_at`, a server-generated `description` (localized to the caller's `users.language`, e.g. `"Hangyul Annual Subscription 2025.01.01 ~ 2026.01.01"`), `amount_cents` + `currency`, the `provider`, and an optional `receipt_url`.
+
 **Endpoints**
 
 | Method & Path | Purpose |
@@ -267,8 +280,9 @@ Every user is eligible for a **7-day free trial** the first time they sign up fo
 **Business rules**
 
 - The 7-day trial is granted once per user (first signup). `trial_started=true` permanently disqualifies the user from another free trial.
-- Monthly plan: `billing_mode="recurring"`. Cancellation flips `cancel_at_period_end=true`; access is retained until `current_period_end`.
-- 12-month plan: `billing_mode="one_time"`. Does not auto-renew. Cancelling has no billing effect (there is nothing to stop charging) but the UI can still show a cancel affordance for parity.
+- **Cancellation never revokes access immediately.** `POST /subscriptions/cancel` only stops the auto-renewal — the server disables the automatic charge on the card registered to the account. The user retains premium access until `expires_at`, which equals the final `current_period_end`.
+- Monthly plan (`billing_mode="recurring"`): cancel flips `cancel_at_period_end=true`, clears `next_billing_at`, and returns `expires_at` set to the end of the already-paid period.
+- 12-month plan (`billing_mode="one_time"`): there is no auto-renewal to cancel; the endpoint is a no-op that still returns the existing `expires_at` for UI parity.
 - Apple / Google purchases are server-verified via receipt; Stripe via webhook. The consumer API is the same `MySubscription` shape regardless of provider.
 - Clients should key "is the user subscribed" off `status in {"trial", "active"}` and `expires_at > now`, not off any single field.
 
