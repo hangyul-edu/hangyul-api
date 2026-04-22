@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.common.api.pagination import CursorPage
 from src.modules.quizzes.presentation.schemas import QuizQuestion
 from src.modules.sentences.presentation.schemas import Sentence
 
@@ -179,6 +180,35 @@ class Course(BaseModel):
 
 class CoursesResponse(BaseModel):
     items: list[Course]
+
+
+class CourseWithLessons(Course):
+    lessons_preview: list[Lecture] = Field(
+        description=(
+            "First `lessons_per_course` lessons in the course (default 5), each including "
+            "thumbnail_url for the row card. Ordered by lesson sequence."
+        ),
+    )
+    lessons_next_cursor: str | None = Field(
+        default=None,
+        description=(
+            "Cursor for the horizontal scroll within this course. Null when the preview already "
+            "holds every lesson. Clients load the next batch via "
+            "GET /courses/{course_id}/lessons?cursor=..."
+        ),
+    )
+
+
+class CoursesPage(BaseModel):
+    items: list[CourseWithLessons]
+    next_cursor: str | None = Field(
+        default=None, description="Cursor for the next vertical page of courses. Null when exhausted."
+    )
+    has_more: bool = False
+
+
+class LecturePage(CursorPage[Lecture]):
+    """Horizontally-paginated lessons inside a single course."""
 
 
 class CourseDetail(Course):

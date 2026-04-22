@@ -11,9 +11,12 @@ from src.modules.learning.presentation.schemas import (
     CalendarResponse,
     Course,
     CourseDetail,
+    CoursesPage,
     CoursesResponse,
+    CourseWithLessons,
     Lecture,
     LectureCompletionResponse,
+    LecturePage,
     LecturePlayResponse,
     LecturePopupResolved,
     LectureProgressRequest,
@@ -94,14 +97,51 @@ def list_levels(track_id: str, user: CurrentUser = Depends(get_current_user)) ->
 
 @tracks_router.get(
     "/{track_id}/courses",
-    response_model=CoursesResponse,
-    summary="List courses available in a track",
+    response_model=CoursesPage,
+    summary="Courses in a track — vertically paginated, each with a lesson preview",
+    description=(
+        "Powers the lesson page. Returns a vertical page of courses (default 10 per call), and "
+        "each course inlines its first `lessons_per_course` lessons (default 5) with "
+        "`thumbnail_url` populated so the horizontal row card can render immediately. "
+        "Use `lessons_next_cursor` on each course with GET /courses/{course_id}/lessons to load "
+        "the next horizontal batch as the user scrolls right-to-left. Use the top-level "
+        "`next_cursor` to load more courses as the user scrolls down."
+    ),
 )
 def list_courses_in_track(
-    track_id: str, user: CurrentUser = Depends(get_current_user)
-) -> CoursesResponse:
+    track_id: str,
+    cursor: str | None = Query(default=None, description="Vertical pagination cursor across courses."),
+    limit: int = Query(default=10, ge=1, le=50, description="Courses per vertical page."),
+    lessons_per_course: int = Query(
+        default=5,
+        ge=1,
+        le=20,
+        description="Lessons to inline on each course card (horizontal preview size).",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+) -> CoursesPage:
     _require_track(track_id)
-    return CoursesResponse(items=[])
+    return CoursesPage(items=[], next_cursor=None, has_more=False)
+
+
+@courses_router.get(
+    "/{course_id}/lessons",
+    response_model=LecturePage,
+    summary="Paginated lessons inside a course (horizontal right-to-left scroll)",
+    description=(
+        "Returns the next page of lessons for a single course. Each item carries "
+        "`thumbnail_url` plus the caller's `completed` flag. Clients pass the "
+        "`lessons_next_cursor` from CoursesPage (or the previous LecturePage.next_cursor) to "
+        "continue loading ~5 more lessons each scroll step."
+    ),
+)
+def list_course_lessons(
+    course_id: str,
+    cursor: str | None = Query(default=None, description="Cursor returned from the previous page."),
+    limit: int = Query(default=5, ge=1, le=50, description="How many lessons to return this page."),
+    user: CurrentUser = Depends(get_current_user),
+) -> LecturePage:
+    return LecturePage(items=[], next_cursor=None, has_more=False)
 
 
 @courses_router.get(
