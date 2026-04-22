@@ -172,6 +172,8 @@ def list_lectures(
 
 @lectures_router.get("/{lecture_id}", response_model=Lecture, summary="Get lecture detail")
 def get_lecture(lecture_id: str, user: CurrentUser = Depends(get_current_user)) -> Lecture:
+    from src.modules.learning.presentation.schemas import LecturePopup
+
     return Lecture(
         lecture_id=lecture_id,
         track_id="trk_topik",
@@ -179,6 +181,20 @@ def get_lecture(lecture_id: str, user: CurrentUser = Depends(get_current_user)) 
         title="인사 표현",
         kind="video",
         duration_seconds=180,
+        popups=[
+            LecturePopup(
+                popup_id=f"pop_{lecture_id}_01",
+                kind="conversation_speak",
+                at_second=45,
+                sentence_id="sen_hello_01",
+            ),
+            LecturePopup(
+                popup_id=f"pop_{lecture_id}_02",
+                kind="topik_question",
+                at_second=120,
+                quiz_id="quz_hello_01",
+            ),
+        ],
     )
 
 

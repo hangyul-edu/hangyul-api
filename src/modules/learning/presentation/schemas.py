@@ -76,6 +76,30 @@ class LevelUpEventsResponse(BaseModel):
 
 
 LectureAccess = Literal["free", "premium"]
+LecturePopupKind = Literal["conversation_speak", "topik_question"]
+
+
+class LecturePopup(BaseModel):
+    popup_id: str = Field(description="Stable id for analytics and idempotent client replay.")
+    kind: LecturePopupKind = Field(
+        description=(
+            "'conversation_speak' — a sentence is shown and the user must read it aloud; the client "
+            "submits the recording to POST /sentences/{sentence_id}/speech-attempts. "
+            "'topik_question' — a multiple-choice / typing question; submission goes to "
+            "POST /quizzes/{quiz_id}/attempts."
+        )
+    )
+    at_second: int = Field(
+        ge=0, description="Playback offset (seconds) at which the popup should fire."
+    )
+    sentence_id: str | None = Field(
+        default=None,
+        description="Present iff kind == 'conversation_speak'; references the Sentence the user reads aloud.",
+    )
+    quiz_id: str | None = Field(
+        default=None,
+        description="Present iff kind == 'topik_question'; references the QuizQuestion to present.",
+    )
 
 
 class Lecture(BaseModel):
@@ -93,6 +117,14 @@ class Lecture(BaseModel):
             "'free' lectures are visible to all members. 'premium' lectures require trial or paid "
             "membership; non-premium callers get the metadata but receive 402 subscription_required "
             "when they request the video URL."
+        ),
+    )
+    popups: list[LecturePopup] = Field(
+        default_factory=list,
+        description=(
+            "Ordered by `at_second`. Clients render each popup as a modal at the matching playback "
+            "offset. When the user has `exclude_speaking = true` in AppSettings, clients suppress "
+            "popups with kind == 'conversation_speak' (topik_question popups still fire)."
         ),
     )
 

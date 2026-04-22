@@ -17,4 +17,7 @@ def get_my_settings(user: CurrentUser = Depends(get_current_user)) -> AppSetting
 def update_my_settings(
     payload: UpdateAppSettingsRequest, user: CurrentUser = Depends(get_current_user)
 ) -> AppSettings:
-    return AppSettings()
+    merged = AppSettings().model_dump()
+    for k, v in payload.model_dump(exclude_none=True).items():
+        merged[k] = v
+    return AppSettings(**merged)

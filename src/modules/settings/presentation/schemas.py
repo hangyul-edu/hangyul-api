@@ -16,6 +16,14 @@ class AppSettings(BaseModel):
     vibration: bool = True
     autoplay_audio: bool = True
     show_romanization: bool = True
+    exclude_speaking: bool = Field(
+        default=False,
+        description=(
+            "Lesson-screen 'Exclude Speaking' toggle. When true, clients suppress in-lecture popups "
+            "with kind == 'conversation_speak' (see §4.6); topik_question popups still fire. "
+            "Useful when the user cannot speak aloud (commute, office, etc.). Defaults to off."
+        ),
+    )
     daily_sentence_goal: DailyItemGoal = Field(
         default=10,
         description=(
@@ -40,5 +48,6 @@ class UpdateAppSettingsRequest(BaseModel):
     vibration: bool | None = None
     autoplay_audio: bool | None = None
     show_romanization: bool | None = None
+    exclude_speaking: bool | None = None
     daily_sentence_goal: DailyItemGoal | None = None
     daily_question_goal: DailyItemGoal | None = None
