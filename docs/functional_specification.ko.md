@@ -343,8 +343,9 @@
 | `GET /tracks` | 두 트랙 목록 및 메타데이터 |
 | `GET /tracks/{track_id}` | 트랙 상세 |
 | `GET /tracks/{track_id}/levels` | 트랙이 제공하는 레벨 목록(1..N)과 라벨 |
-| `GET /tracks/{track_id}/courses` | 트랙에 등록된 코스 목록과 각 코스의 레슨 수 |
-| `GET /courses/{course_id}` | 코스 상세 — 정렬된 레슨 목록과 사용자별 완료 여부(코스 페이지를 그리는 데 사용) |
+| `GET /tracks/{track_id}/courses?cursor=&limit=&lessons_per_course=` | 트랙의 코스 목록 — 세로 방향 페이지네이션. 각 코스는 첫 N개(기본 5개) 레슨을 `thumbnail_url`과 함께 인라인으로 포함하며, `lessons_next_cursor`로 가로 스크롤 시 다음 배치를 로드한다. 상위 `next_cursor`로 세로 스크롤 시 다음 코스 배치를 로드. |
+| `GET /courses/{course_id}/lessons?cursor=&limit=` | 코스 내부 레슨 페이지네이션(우→좌 가로 스크롤용, 기본 5개). |
+| `GET /courses/{course_id}` | 코스 상세 — 전체 레슨 목록과 완료 상태(페이지네이션 없음; 코스 진입 화면에서 사용) |
 | `GET /lectures/{lecture_id}/speak-practice` | 레슨의 따라 말하기 전용 연습 세트 — 해당 레슨의 `conversation_speak` 팝업을 재생 순으로 반환 |
 | `GET /me/learning` | 내 트랙별 `current_level` |
 | `PATCH /me/learning/{track_id}` | 트랙의 `current_level`을 수동으로 변경 |
@@ -376,6 +377,15 @@
 **코스**
 
 구조는 **트랙 → 코스 → 레슨(Lecture)**이다. 코스는 제목·설명·커버 이미지·사용자 완료 카운트로 묶인 레슨 번들이며, `Lecture.course_id`가 소속 코스를 참조한다(코스에 속하지 않으면 null). 사용자가 코스에 들어가면 `GET /courses/{course_id}`를 호출해 정렬된 레슨 목록과 각 레슨의 `completed` 값을 받고, 코스 페이지와 "X / Y 완료" 표시를 그릴 수 있다.
+
+**레슨 페이지 페이지네이션.** 사용자가 처음 진입해 둘러보는 코스 리스트는 첫 렌더링을 빠르게 하기 위해 두 축의 페이지네이션을 독립적으로 운용한다:
+
+| 축 | 방향 | 엔드포인트 | 커서 |
+|---|---|---|---|
+| 코스 | 세로(아래) | `GET /tracks/{track_id}/courses` (기본 10개/페이지) | 응답의 `next_cursor` |
+| 코스 내부 레슨 | 가로(우→좌, ≈5개/페이지) | `GET /courses/{course_id}/lessons` | 각 코스 카드의 `lessons_next_cursor`, 이후 응답의 `next_cursor` |
+
+초기 로드 시 `items[]`의 각 코스는 이미 `lessons_preview`(썸네일 포함 첫 5개 레슨)와 `lessons_next_cursor`를 포함하므로 가로 행이 추가 호출 없이 바로 그려진다. 사용자가 행을 우→좌로 스크롤하면 해당 커서로 레슨 엔드포인트를 호출해 다음 5개를 가져오고, 페이지를 아래로 스크롤하면 상위 `next_cursor`로 `/tracks/{track_id}/courses`를 재호출해 다음 코스 묶음을 가져온다.
 
 코스 페이지의 각 레슨 행 오른쪽에는 마이크 버튼이 있다. 버튼을 누르면 따라 말하기 전용 연습 화면으로 이동하며, 이때 `GET /lectures/{lecture_id}/speak-practice`를 호출한다. 서버는 해당 레슨의 `popups[]`에서 `conversation_speak` 팝업만 재생 순으로 필터링해 `popup_id`, `at_second`, `sentence_id`로 반환한다. 클라이언트는 `GET /sentences/{sentence_id}`로 전체 `Sentence`를 받고, 기존 `POST /sentences/{sentence_id}/speech-attempts`로 연습 결과를 제출한다(§4.7 참조) — 히스토리, 발음 평가, 일일 목표 진행 모두 기존 파이프라인을 그대로 사용한다.
 
