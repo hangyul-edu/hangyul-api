@@ -286,6 +286,26 @@
 
 문장은 회화 트랙의 추천 콘텐츠 타입이며, 모든 추천은 **사용자의 회화 `current_level` 기준으로 AI가 생성**한다(4.18 참조). 북마크, 오디오 재생, 복습 완료 등의 이벤트는 회화 자동 승급 기준으로 사용된다.
 
+**모든 추천 문장은 해당 문장의 AI 생성 발음 오디오를 함께 포함한다.** 응답 페이로드에 중첩 `audio` 객체(서명된 CDN URL + 포맷 + 길이 + voice + `expires_at`)가 들어 있다. 클라이언트는 파일을 로컬에 캐시하고, 앱 내 재생(replay) 버튼은 캐시된 파일을 재생하므로 추가 API 호출이 없다.
+
+**읽기 플로우**
+
+1. 문장이 도착하면 클라이언트가 `audio`를 한 번 자동 재생한다.
+2. (선택) 사용자가 재생 버튼을 누르면 캐시된 파일을 다시 재생한다.
+3. 사용자가 마이크 버튼을 누르고 화면의 문장(빈칸 포함)을 소리 내어 읽으면, 클라이언트가 녹음한 오디오를 `POST /sentences/{sentence_id}/speech-attempts`로 업로드한다.
+4. 서버가 ASR + 발음 평가를 기준 `korean` 텍스트와 비교해 다음을 반환한다:
+   - `correct: bool`
+   - `transcription: str` — 사용자가 실제로 발화한 내용
+   - `pronunciation_score: int` (0–100)
+   - `feedback_code: "correct" | "missed_words" | "bad_pronunciation" | "unclear_audio"`
+5. 클라이언트 UI:
+   - `correct=true` → 파란색 "정답" 메시지
+   - `correct=false` → 빨간색 "다시 생각해보고 한 번 더 시도해보세요" 메시지
+
+**빈칸**
+
+빈칸 채우기 문제인 경우 `display_text`에는 빈칸 형태(예: `덕분에 잘 ___ 있어요`)가 들어가고, `korean`에는 TTS · 평가용 완성 문장이 들어간다. `blanks[]`에는 예상 정답이 담긴다.
+
 문장 화면에는 **서로 다른 두 개의 UI**가 배치된다:
 
 1. **프롬프트 입력창(추천 세분화용)** — 콘텐츠 카드 근처의 입력 필드 + 전송 버튼. 예: "면접에서 쓸 문장 추천"을 입력하고 전송하면 클라이언트가 현재 레벨과 프롬프트로 `POST /recommendations/sentences`를 재호출하고, 응답이 기존 피드를 교체한다.
@@ -303,13 +323,16 @@
 | `GET /sentences/{sentence_id}` | 예문·설명 포함 문장 상세 |
 | `POST /sentences/{sentence_id}/bookmark` | 북마크 추가 |
 | `DELETE /sentences/{sentence_id}/bookmark` | 북마크 해제 |
-| `POST /sentences/{sentence_id}/listen` | 오디오 재생 이벤트 기록 |
-| `GET /sentences/{sentence_id}/audio` | 서명된 오디오 URL |
+| `POST /sentences/{sentence_id}/listen` | 오디오 재생 이벤트 기록(분석 + 자동 승급 신호) |
+| `GET /sentences/{sentence_id}/audio` | 서명된 오디오 URL 재발급(`expires_at` 이후용, 일반 재생은 캐시 사용) |
+| `POST /sentences/{sentence_id}/speech-attempts` | 사용자의 읽기 녹음을 멀티파트 업로드 → 정오 판정·ASR 전사·발음 점수 반환 |
 
 **비즈니스 규칙**
 
-- 문장 `status`는 퀴즈·노출 신호에 따라 `new → learning → mastered`로 이동.
-- 오디오 URL TTL은 15분 이하.
+- 문장 `status`는 읽기 시도·노출 신호에 따라 `new → learning → mastered`로 이동.
+- 추천 문장에는 항상 `audio`(AI TTS)가 포함된다. 서명 URL TTL은 15분 이하이며, 클라이언트는 첫 수신 시 파일을 로컬에 캐시하고 재생 버튼은 캐시된 파일을 재사용한다. `expires_at` 이후에는 `GET /sentences/{sentence_id}/audio`로 새 URL을 재발급받는다.
+- `POST /sentences/{sentence_id}/speech-attempts`는 최대 2 MB, 15초 이하의 오디오만 허용한다. `audio` 파일이 없으면 `422 validation_error`를 반환한다. 모든 시도는 `attempt_id`로 기록되어 분석 / 자동 승급에 사용된다.
+- 클라이언트 UI는 `correct=true`일 때 파란 정답 메시지를, 그 외에는 빨간 "다시 생각해보고 재시도" 메시지와 재시도 버튼을 렌더링한다.
 
 ---
 
@@ -627,7 +650,8 @@
 - `prompt`는 최대 500자, LLM 전송 전에 모더레이션을 거친다.
 - `count` 기본값 5, 최대 20.
 - `/recommendations/questions` 결과 항목은 §4.8의 `QuizQuestion`과 동일 구조를 사용하며, 풀이는 퀴즈 풀이 엔드포인트로 제출한다.
-- `/recommendations/sentences` 결과 항목은 §4.7의 `Sentence`와 동일 구조를 사용하며, 북마크·재생 이벤트는 문장 엔드포인트로 전송한다.
+- `/recommendations/sentences` 결과 항목은 §4.7의 `Sentence`와 동일 구조를 사용하며, 중첩 `audio` 객체(AI TTS — 서명 URL + 포맷 + 길이 + `expires_at`)를 항상 포함한다. 클라이언트는 파일을 로컬에 캐시해 재생 버튼에서 재사용하고, URL 만료 시에만 `GET /sentences/{sentence_id}/audio`를 호출한다.
+- 북마크·재생·읽기 시도 이벤트는 문장 엔드포인트로 전송된다.
 
 ---
 

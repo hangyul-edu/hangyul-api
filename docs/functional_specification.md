@@ -286,6 +286,26 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 
 Sentences are the recommended content type for the Conversation track; every recommendation is **AI-generated at the user's Conversation `current_level`** (see 4.18). Bookmarking, audio, and review-complete events feed the Conversation auto-promotion criteria.
 
+**Each recommended sentence ships with its own AI-generated pronunciation audio.** The response payload includes a nested `audio` object — a signed CDN URL plus format, duration, voice, and an `expires_at`. The client caches the audio file locally; the in-app replay button plays the local file with no extra API call.
+
+**Read-aloud flow**
+
+1. Sentence arrives → client auto-plays `audio` once.
+2. (Optional) user taps the replay button → client re-plays the cached file.
+3. User taps the microphone and reads the sentence aloud (including any blanks in `display_text`). The client records audio and uploads it to `POST /sentences/{sentence_id}/speech-attempts`.
+4. Server runs ASR + pronunciation scoring against the reference `korean` text and returns:
+   - `correct: bool`
+   - `transcription: str` — what the user actually pronounced
+   - `pronunciation_score: int` (0–100)
+   - `feedback_code: "correct" | "missed_words" | "bad_pronunciation" | "unclear_audio"`
+5. Client UI:
+   - `correct=true` → blue "correct" message.
+   - `correct=false` → red "think again and try once more" message.
+
+**Blanks**
+
+If the recommended sentence is a fill-in-the-blank exercise, `display_text` contains the blanked form (e.g. `덕분에 잘 ___ 있어요`) while `korean` holds the full answer for TTS and evaluation. `blanks[]` carries the expected fill-ins.
+
 Two distinct UIs live on the sentence screen:
 
 1. **Prompt input (for recommendation refinement)** — a text field with a send button near the content card. Typing e.g. "sentences for a job interview" and pressing send re-calls `POST /recommendations/sentences` with the current level and the prompt; the new list replaces the feed.
@@ -303,13 +323,16 @@ Two distinct UIs live on the sentence screen:
 | `GET /sentences/{sentence_id}` | Sentence detail with examples |
 | `POST /sentences/{sentence_id}/bookmark` | Add bookmark |
 | `DELETE /sentences/{sentence_id}/bookmark` | Remove bookmark |
-| `POST /sentences/{sentence_id}/listen` | Audio playback event |
-| `GET /sentences/{sentence_id}/audio` | Signed audio URL |
+| `POST /sentences/{sentence_id}/listen` | Audio playback event (analytics + auto-promotion signal) |
+| `GET /sentences/{sentence_id}/audio` | Refresh the signed audio URL (e.g. after `expires_at`); replay normally uses the cached file |
+| `POST /sentences/{sentence_id}/speech-attempts` | Multipart upload of the user's spoken reading; returns correctness, ASR transcription, and pronunciation score |
 
 **Business rules**
 
-- Sentence `status` moves `new → learning → mastered` based on quiz + exposure signals.
-- Audio URLs TTL ≤ 15 min.
+- Sentence `status` moves `new → learning → mastered` based on speech + exposure signals.
+- Recommended sentences always include `audio` (AI TTS). Audio URLs are signed with a ≤ 15-minute TTL; the client caches the file locally on first fetch and reuses the cached file for replay. After `expires_at`, the client can call `GET /sentences/{sentence_id}/audio` to mint a fresh URL.
+- `POST /sentences/{sentence_id}/speech-attempts` accepts audio up to 2 MB and 15 seconds. Requests without an `audio` file return `422 validation_error`. Each attempt mints an `attempt_id` for analytics / auto-promotion.
+- The client-side UI uses `correct=true` to render a blue confirmation; any `correct=false` variant renders a red "think again" prompt with a retry affordance.
 
 ---
 
@@ -627,7 +650,8 @@ If the user submits an empty prompt, the server regenerates at `current_level` w
 - `prompt` is capped at 500 chars and moderated before being sent to the LLM.
 - `count` defaults to 5, max 20.
 - Items returned by `/recommendations/questions` use the same `QuizQuestion` shape as §4.8; attempts are submitted through the quiz attempt endpoint.
-- Items returned by `/recommendations/sentences` use the same `Sentence` shape as §4.7; bookmarks and listen events flow through the sentence endpoints.
+- Items returned by `/recommendations/sentences` use the same `Sentence` shape as §4.7 and always include the nested `audio` object (AI-generated TTS with a signed URL + format + duration + `expires_at`). Clients cache the file locally for the replay button; no extra API call is needed unless the URL has expired (`GET /sentences/{sentence_id}/audio`).
+- Bookmarks, listen events, and speech attempts flow through the sentence endpoints.
 
 ---
 
