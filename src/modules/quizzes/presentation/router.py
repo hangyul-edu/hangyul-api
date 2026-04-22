@@ -72,6 +72,7 @@ def submit_attempt(
     user: CurrentUser = Depends(get_current_user),
 ) -> QuizAttemptResponse:
     correct = payload.answer == "1"
+    chatbot_conversation_id = None if correct else f"cnv_{uuid4().hex[:12]}"
     return QuizAttemptResponse(
         attempt_id=f"att_{uuid4().hex[:12]}",
         quiz_id=quiz_id,
@@ -80,6 +81,7 @@ def submit_attempt(
         explanation="'덕분에'는 긍정적인 결과의 원인을 나타낼 때 사용합니다.",
         xp_earned=10 if correct else 0,
         submitted_at=datetime.now(timezone.utc),
+        chatbot_conversation_id=chatbot_conversation_id,
     )
 
 

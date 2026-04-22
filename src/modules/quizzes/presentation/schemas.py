@@ -47,6 +47,14 @@ class QuizAttemptResponse(BaseModel):
     explanation: str | None = None
     xp_earned: int
     submitted_at: datetime
+    chatbot_conversation_id: str | None = Field(
+        default=None,
+        description=(
+            "Set when the answer was incorrect on a TOPIK quiz — the server pre-seeded an AI-chat "
+            "conversation with the question, the user's answer, and the correct answer. The client "
+            "opens /ai/conversations/{id}/messages to read the explanation."
+        ),
+    )
 
 
 class QuizAttempt(BaseModel):

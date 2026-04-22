@@ -6,14 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 TrackKind = Literal["topik", "conversation"]
-ProgressionKind = Literal["lectures", "sentences"]
 LectureKind = Literal["video", "reading", "listening"]
 
-
-class ProgressionInfo(BaseModel):
-    kind: ProgressionKind
-    total_levels: int
-    level_label_prefix: str = "학습 레벨"
+# Level scale per track: Conversation 1..10, TOPIK 1..6.
+TRACK_MAX_LEVEL: dict[TrackKind, int] = {"conversation": 10, "topik": 6}
 
 
 class Track(BaseModel):
@@ -21,7 +17,10 @@ class Track(BaseModel):
     kind: TrackKind
     name: str
     description: str | None = None
-    progressions: list[ProgressionInfo]
+    max_level: int = Field(description="Upper bound of current_level for this track.")
+    content_kind: Literal["sentences", "questions"] = Field(
+        description="sentences = Conversation track, questions = TOPIK track."
+    )
 
 
 class TracksResponse(BaseModel):
@@ -30,39 +29,41 @@ class TracksResponse(BaseModel):
 
 class Level(BaseModel):
     track_id: str
-    kind: ProgressionKind
     level: int
     label: str
-    unlocked: bool = False
-    progress_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
-    completed_lessons: int = 0
-    total_lessons: int = 0
 
 
 class LevelsResponse(BaseModel):
     items: list[Level]
 
 
-class MyProgressionState(BaseModel):
+class MyTrackState(BaseModel):
     track_id: str
-    kind: ProgressionKind
+    kind: TrackKind
     current_level: int = Field(ge=1)
-    total_levels: int
+    max_level: int
 
 
 class MyLearningState(BaseModel):
-    progressions: list[MyProgressionState]
-    topik_target_grade: int | None = Field(
-        default=None, ge=1, le=6, description="Only set when the user enrolled into TOPIK at onboarding."
-    )
+    tracks: list[MyTrackState]
 
 
 class UpdateCurrentLevelRequest(BaseModel):
     current_level: int = Field(ge=1)
 
 
-class UpdateTopikTargetRequest(BaseModel):
-    target_grade: int = Field(ge=1, le=6)
+class LevelUpEvent(BaseModel):
+    event_id: str
+    track_id: str
+    from_level: int = Field(ge=1)
+    to_level: int = Field(ge=1)
+    criterion: str = Field(description="Machine-readable reason, e.g. 'sentences_completed_threshold'.")
+    occurred_at: datetime
+
+
+class LevelUpEventsResponse(BaseModel):
+    items: list[LevelUpEvent]
+    next_cursor: str | None = None
 
 
 class Lecture(BaseModel):
@@ -130,10 +131,3 @@ class StatsResponse(BaseModel):
     total_sentences: int
     total_xp: int
     points: list[StatsPoint]
-
-
-class CompletionCelebration(BaseModel):
-    new_level: int
-    level_label: str
-    xp_earned: int
-    streak_continued: bool

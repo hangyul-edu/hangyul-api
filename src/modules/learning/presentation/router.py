@@ -4,9 +4,10 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 
-from src.common.exceptions import NotFoundError
+from src.common.exceptions import NotFoundError, ValidationError
 from src.common.security.auth import CurrentUser, get_current_user
 from src.modules.learning.presentation.schemas import (
+    TRACK_MAX_LEVEL,
     CalendarResponse,
     Lecture,
     LectureProgressRequest,
@@ -14,17 +15,15 @@ from src.modules.learning.presentation.schemas import (
     LectureVideoResponse,
     LecturesResponse,
     Level,
+    LevelUpEventsResponse,
     LevelsResponse,
     MyLearningState,
-    MyProgressionState,
-    ProgressionInfo,
-    ProgressionKind,
+    MyTrackState,
     StatsRange,
     StatsResponse,
     Track,
     TracksResponse,
     UpdateCurrentLevelRequest,
-    UpdateTopikTargetRequest,
 )
 
 tracks_router = APIRouter(prefix="/tracks", tags=["learning"])
@@ -32,122 +31,109 @@ learning_router = APIRouter(prefix="/learning", tags=["learning"])
 lectures_router = APIRouter(prefix="/lectures", tags=["learning"])
 me_learning_router = APIRouter(prefix="/me/learning", tags=["learning"])
 
-_DEFAULT_PROGRESSIONS: list[ProgressionInfo] = [
-    ProgressionInfo(kind="lectures", total_levels=10),
-    ProgressionInfo(kind="sentences", total_levels=10),
-]
-
 _TRACK_CATALOG: dict[str, Track] = {
-    "trk_topik": Track(
-        track_id="trk_topik",
-        kind="topik",
-        name="TOPIK",
-        description="TOPIK 급수 대비 트랙. 강의와 문장 학습이 독립적으로 진행됩니다.",
-        progressions=_DEFAULT_PROGRESSIONS,
-    ),
     "trk_conversation": Track(
         track_id="trk_conversation",
         kind="conversation",
         name="회화",
-        description="일상 회화 중심 트랙. 강의와 문장 학습이 독립적으로 진행됩니다.",
-        progressions=_DEFAULT_PROGRESSIONS,
+        description="일상 회화 트랙. 현재 레벨에 맞춰 문장이 추천되며, 자동 승급됩니다.",
+        max_level=TRACK_MAX_LEVEL["conversation"],
+        content_kind="sentences",
+    ),
+    "trk_topik": Track(
+        track_id="trk_topik",
+        kind="topik",
+        name="TOPIK",
+        description="TOPIK 트랙. 현재 레벨에 맞춰 문제가 추천되며, 자동 승급됩니다.",
+        max_level=TRACK_MAX_LEVEL["topik"],
+        content_kind="questions",
     ),
 }
 
 
-@tracks_router.get("", response_model=TracksResponse, summary="List the two learning categories")
-def list_tracks(user: CurrentUser = Depends(get_current_user)) -> TracksResponse:
-    return TracksResponse(items=list(_TRACK_CATALOG.values()))
-
-
-@tracks_router.get("/{track_id}", response_model=Track, summary="Get category detail")
-def get_track(track_id: str, user: CurrentUser = Depends(get_current_user)) -> Track:
+def _require_track(track_id: str) -> Track:
     track = _TRACK_CATALOG.get(track_id)
     if not track:
         raise NotFoundError(f"Unknown track_id '{track_id}'.")
     return track
 
 
+@tracks_router.get("", response_model=TracksResponse, summary="List the two learning tracks")
+def list_tracks(user: CurrentUser = Depends(get_current_user)) -> TracksResponse:
+    return TracksResponse(items=list(_TRACK_CATALOG.values()))
+
+
+@tracks_router.get("/{track_id}", response_model=Track, summary="Get track detail")
+def get_track(track_id: str, user: CurrentUser = Depends(get_current_user)) -> Track:
+    return _require_track(track_id)
+
+
 @tracks_router.get(
-    "/{track_id}/progressions/{kind}/levels",
+    "/{track_id}/levels",
     response_model=LevelsResponse,
-    summary="List levels in a specific progression",
+    summary="List levels available in a track",
 )
-def list_progression_levels(
-    track_id: str,
-    kind: ProgressionKind,
-    user: CurrentUser = Depends(get_current_user),
-) -> LevelsResponse:
-    if track_id not in _TRACK_CATALOG:
-        raise NotFoundError(f"Unknown track_id '{track_id}'.")
+def list_levels(track_id: str, user: CurrentUser = Depends(get_current_user)) -> LevelsResponse:
+    track = _require_track(track_id)
     items = [
-        Level(
-            track_id=track_id,
-            kind=kind,
-            level=i,
-            label=f"학습 레벨 {i}",
-            unlocked=i <= 1,
-            total_lessons=10,
-        )
-        for i in range(1, 11)
+        Level(track_id=track_id, level=i, label=f"학습 레벨 {i}")
+        for i in range(1, track.max_level + 1)
     ]
     return LevelsResponse(items=items)
 
 
-@me_learning_router.get("", response_model=MyLearningState, summary="My current levels and TOPIK target")
+@me_learning_router.get("", response_model=MyLearningState, summary="My current level per track")
 def get_my_learning(user: CurrentUser = Depends(get_current_user)) -> MyLearningState:
     return MyLearningState(
-        progressions=[
-            MyProgressionState(track_id="trk_conversation", kind="lectures", current_level=1, total_levels=10),
-            MyProgressionState(track_id="trk_conversation", kind="sentences", current_level=1, total_levels=10),
-            MyProgressionState(track_id="trk_topik", kind="lectures", current_level=1, total_levels=10),
-            MyProgressionState(track_id="trk_topik", kind="sentences", current_level=1, total_levels=10),
-        ],
-        topik_target_grade=None,
+        tracks=[
+            MyTrackState(
+                track_id=tid,
+                kind=track.kind,
+                current_level=1,
+                max_level=track.max_level,
+            )
+            for tid, track in _TRACK_CATALOG.items()
+        ]
     )
 
 
 @me_learning_router.patch(
-    "/{track_id}/{kind}",
-    response_model=MyProgressionState,
-    summary="Update the current level of a progression",
+    "/{track_id}",
+    response_model=MyTrackState,
+    summary="Manually update the current level of a track",
 )
 def update_current_level(
     track_id: str,
-    kind: ProgressionKind,
     payload: UpdateCurrentLevelRequest,
     user: CurrentUser = Depends(get_current_user),
-) -> MyProgressionState:
-    track = _TRACK_CATALOG.get(track_id)
-    if not track:
-        raise NotFoundError(f"Unknown track_id '{track_id}'.")
-    total = next((p.total_levels for p in track.progressions if p.kind == kind), 10)
-    return MyProgressionState(
+) -> MyTrackState:
+    track = _require_track(track_id)
+    if payload.current_level > track.max_level:
+        raise ValidationError(
+            f"current_level must be between 1 and {track.max_level} for track '{track_id}'."
+        )
+    return MyTrackState(
         track_id=track_id,
-        kind=kind,
+        kind=track.kind,
         current_level=payload.current_level,
-        total_levels=total,
+        max_level=track.max_level,
     )
 
 
-@me_learning_router.patch(
-    "/trk_topik",
-    response_model=MyLearningState,
-    summary="Update TOPIK target grade (1–6)",
+@me_learning_router.get(
+    "/events",
+    response_model=LevelUpEventsResponse,
+    summary="My level-up events (auto-promotion history)",
 )
-def update_topik_target(
-    payload: UpdateTopikTargetRequest,
+def list_level_up_events(
+    type: str = Query("level_up", description="Reserved for future event kinds; only 'level_up' today."),
+    cursor: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
-) -> MyLearningState:
-    return MyLearningState(
-        progressions=[
-            MyProgressionState(track_id="trk_conversation", kind="lectures", current_level=1, total_levels=10),
-            MyProgressionState(track_id="trk_conversation", kind="sentences", current_level=1, total_levels=10),
-            MyProgressionState(track_id="trk_topik", kind="lectures", current_level=1, total_levels=10),
-            MyProgressionState(track_id="trk_topik", kind="sentences", current_level=1, total_levels=10),
-        ],
-        topik_target_grade=payload.target_grade,
-    )
+) -> LevelUpEventsResponse:
+    if type != "level_up":
+        raise ValidationError("Only type='level_up' is supported.")
+    return LevelUpEventsResponse(items=[])
 
 
 @learning_router.get("/calendar", response_model=CalendarResponse, summary="Daily study calendar")
@@ -167,14 +153,13 @@ def get_stats(
     return StatsResponse(range=range, total_minutes=0, total_sentences=0, total_xp=0, points=[])
 
 
-@lectures_router.get("", response_model=LecturesResponse, summary="List lectures for a (category, level)")
+@lectures_router.get("", response_model=LecturesResponse, summary="List lectures (primarily TOPIK)")
 def list_lectures(
     track_id: str = Query(...),
     level: int = Query(..., ge=1),
     user: CurrentUser = Depends(get_current_user),
 ) -> LecturesResponse:
-    if track_id not in _TRACK_CATALOG:
-        raise NotFoundError(f"Unknown track_id '{track_id}'.")
+    _require_track(track_id)
     return LecturesResponse(items=[])
 
 

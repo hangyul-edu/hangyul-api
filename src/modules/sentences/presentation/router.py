@@ -17,12 +17,11 @@ from src.modules.sentences.presentation.schemas import (
 router = APIRouter(prefix="/sentences", tags=["sentences"])
 
 
-@router.get("", response_model=SentencePage, summary="List sentences for study")
+@router.get("", response_model=SentencePage, summary="List sentences for study (Conversation track)")
 def list_sentences(
-    track_id: str | None = Query(
-        None, description="Defaults to the user's active category (trk_conversation or trk_topik)."
+    level: int | None = Query(
+        None, ge=1, le=10, description="Defaults to the caller's Conversation current_level."
     ),
-    level: int | None = Query(None, ge=1, le=10, description="Defaults to the user's sentence-progression current level."),
     topic: str | None = None,
     cursor: str | None = None,
     limit: int = Query(20, ge=1, le=100),
@@ -53,7 +52,6 @@ def list_recent(
 def get_sentence(sentence_id: str, user: CurrentUser = Depends(get_current_user)) -> Sentence:
     return Sentence(
         sentence_id=sentence_id,
-        track_id="trk_topik",
         korean="덕분에 잘 지내고 있어요.",
         translation="Thanks to you, I'm doing well.",
         level=3,
