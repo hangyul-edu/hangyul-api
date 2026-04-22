@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 UiLanguage = Literal["ko", "en", "ja", "zh-CN", "zh-TW", "vi", "th", "id"]
 AppTheme = Literal["system", "light", "dark"]
+DailyItemGoal = Literal[5, 10, 20, 30, 40]
 
 
 class AppSettings(BaseModel):
@@ -15,7 +16,21 @@ class AppSettings(BaseModel):
     vibration: bool = True
     autoplay_audio: bool = True
     show_romanization: bool = True
-    daily_goal_minutes: int = 10
+    daily_sentence_goal: DailyItemGoal = Field(
+        default=10,
+        description=(
+            "Daily milestone for Conversation sentences studied today. Chosen from the fixed set "
+            "5 / 10 / 20 / 30 / 40. Users may study beyond this count; the value is only used to "
+            "decide whether the daily goal has been met."
+        ),
+    )
+    daily_question_goal: DailyItemGoal = Field(
+        default=10,
+        description=(
+            "Daily milestone for TOPIK questions attempted today. Chosen from the fixed set "
+            "5 / 10 / 20 / 30 / 40. Users may attempt more; overflow does not change goal status."
+        ),
+    )
 
 
 class UpdateAppSettingsRequest(BaseModel):
@@ -25,4 +40,5 @@ class UpdateAppSettingsRequest(BaseModel):
     vibration: bool | None = None
     autoplay_audio: bool | None = None
     show_romanization: bool | None = None
-    daily_goal_minutes: int | None = None
+    daily_sentence_goal: DailyItemGoal | None = None
+    daily_question_goal: DailyItemGoal | None = None

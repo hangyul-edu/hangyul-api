@@ -20,10 +20,23 @@ def get_summary(user: CurrentUser = Depends(get_current_user)) -> DashboardSumma
         streak_days=0,
         last_study_date=None,
         today_minutes=0,
-        today_minutes_goal=10,
         goals=[
-            DashboardGoal(key="daily_minutes", label="오늘 목표 시간", target=10, current=0, unit="minutes"),
-            DashboardGoal(key="daily_sentences", label="오늘 목표 문장", target=10, current=0),
+            DashboardGoal(
+                key="daily_sentences",
+                label="회화 문장",
+                target=10,
+                current=0,
+                achieved=False,
+                track_id="trk_conversation",
+            ),
+            DashboardGoal(
+                key="daily_questions",
+                label="TOPIK 문제",
+                target=10,
+                current=0,
+                achieved=False,
+                track_id="trk_topik",
+            ),
         ],
         tracks=[
             DashboardTrack(
