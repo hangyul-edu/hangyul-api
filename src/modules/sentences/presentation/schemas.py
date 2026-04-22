@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from src.common.api.pagination import CursorPage
+from src.common.api.progress import DailyProgress
 
 SentenceStatus = Literal["new", "learning", "mastered", "bookmarked"]
 AudioFormat = Literal["mp3", "wav", "aac", "opus"]
@@ -140,3 +141,11 @@ class SpeechAttemptResponse(BaseModel):
         ),
     )
     submitted_at: datetime
+    daily_progress: DailyProgress | None = Field(
+        default=None,
+        description=(
+            "Snapshot of the Conversation daily_sentence_goal progress after this attempt. When "
+            "`correct` is true the server has already incremented `current`; clients update the "
+            "on-screen counter directly from this field."
+        ),
+    )

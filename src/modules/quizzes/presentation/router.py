@@ -71,7 +71,22 @@ def submit_attempt(
     payload: QuizAttemptRequest,
     user: CurrentUser = Depends(get_current_user),
 ) -> QuizAttemptResponse:
+    from datetime import timedelta
+
+    from src.common.api.progress import DailyProgress
+
     correct = payload.answer == "1"
+    resets = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    progress = DailyProgress(
+        track_id="trk_topik",
+        goal_key="daily_questions",
+        target=10,
+        current=1 if correct else 0,
+        achieved=False,
+        resets_at=resets,
+    )
     return QuizAttemptResponse(
         attempt_id=f"att_{uuid4().hex[:12]}",
         quiz_id=quiz_id,
@@ -80,6 +95,7 @@ def submit_attempt(
         explanation="'덕분에'는 긍정적인 결과의 원인을 나타낼 때 사용합니다.",
         xp_earned=10 if correct else 0,
         submitted_at=datetime.now(timezone.utc),
+        daily_progress=progress,
     )
 
 

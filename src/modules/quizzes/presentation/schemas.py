@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.common.api.progress import DailyProgress
+
 QuizType = Literal["multiple_choice", "fill_blank", "typing", "ordering", "listening"]
 
 
@@ -51,6 +53,14 @@ class QuizAttemptResponse(BaseModel):
     # shows a chatbot-icon CTA offering an explanation. Only on user tap does the
     # client call POST /ai/conversations with context.kind="quiz_attempt",
     # attempt_id=..., reason="explain_mistake", auto_assistant_reply=true.
+    daily_progress: DailyProgress | None = Field(
+        default=None,
+        description=(
+            "Snapshot of the TOPIK daily_question_goal progress after this attempt. When `correct` "
+            "is true the server has already incremented `current`; clients update the on-screen "
+            "counter directly from this field without a follow-up fetch."
+        ),
+    )
 
 
 class QuizAttempt(BaseModel):

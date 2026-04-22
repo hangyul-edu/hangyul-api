@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from datetime import datetime, timedelta, timezone
 
+from fastapi import APIRouter, Depends, Query
+
+from src.common.api.progress import (
+    DailyProgress,
+    DailyProgressListResponse,
+    DailyProgressTrackId,
+)
 from src.common.security.auth import CurrentUser, get_current_user
 from src.modules.dashboard.presentation.schemas import (
     DashboardGoal,
@@ -11,6 +18,24 @@ from src.modules.dashboard.presentation.schemas import (
 )
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _next_local_midnight() -> datetime:
+    # Stub — real impl uses the user's timezone.
+    return (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
+def _stub_progress(track_id: DailyProgressTrackId) -> DailyProgress:
+    return DailyProgress(
+        track_id=track_id,
+        goal_key="daily_sentences" if track_id == "trk_conversation" else "daily_questions",
+        target=10,
+        current=0,
+        achieved=False,
+        resets_at=_next_local_midnight(),
+    )
 
 
 @router.get("/summary", response_model=DashboardSummary, summary="Home dashboard snapshot")
@@ -55,3 +80,26 @@ def get_summary(user: CurrentUser = Depends(get_current_user)) -> DashboardSumma
 @router.get("/streak", response_model=StreakResponse, summary="Current and best streak")
 def get_streak(user: CurrentUser = Depends(get_current_user)) -> StreakResponse:
     return StreakResponse(current=0, best=0, freeze_tokens=0)
+
+
+@router.get(
+    "/daily-progress",
+    response_model=DailyProgressListResponse,
+    summary="Today's daily-goal progress per track (called on 'Start Now' and on the home screen)",
+    description=(
+        "Focused snapshot of the user's daily-goal state. Returns one DailyProgress entry per "
+        "applicable track; use `track_id` to scope to a single track on session start. The home "
+        "screen calls this endpoint (or the larger /dashboard/summary) to render target / current / "
+        "achieved counts alongside the streak and today's study time."
+    ),
+)
+def get_daily_progress(
+    track_id: DailyProgressTrackId | None = Query(
+        default=None,
+        description="Optional — returns just this track's progress when set.",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+) -> DailyProgressListResponse:
+    all_tracks: list[DailyProgressTrackId] = ["trk_conversation", "trk_topik"]
+    chosen = [track_id] if track_id else all_tracks
+    return DailyProgressListResponse(items=[_stub_progress(t) for t in chosen])

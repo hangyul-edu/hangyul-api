@@ -148,6 +148,11 @@ def submit_speech_attempt(
     client_request_id: str | None = Form(default=None, description="Optional idempotency key."),
     user: CurrentUser = Depends(get_current_user),
 ) -> SpeechAttemptResponse:
+    from src.common.api.progress import DailyProgress
+
+    resets = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     return SpeechAttemptResponse(
         attempt_id=f"spk_{uuid4().hex[:12]}",
         sentence_id=sentence_id,
@@ -157,4 +162,12 @@ def submit_speech_attempt(
         pronunciation_score=92,
         feedback_code="correct",
         submitted_at=datetime.now(timezone.utc),
+        daily_progress=DailyProgress(
+            track_id="trk_conversation",
+            goal_key="daily_sentences",
+            target=10,
+            current=1,
+            achieved=False,
+            resets_at=resets,
+        ),
     )
