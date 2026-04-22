@@ -6,14 +6,21 @@
 
 ## 1. Product Overview
 
-Hangyul is a mobile Korean-language learning service for non-native speakers. Learning is split into two categories — **Conversation** (회화) and **TOPIK** — and each category holds two independent progressions, **lectures** and **sentence study**, each with its own current level. TOPIK additionally carries a target 급수 (1–6). The service combines streak-driven daily sessions, adaptive sentence recommendations, video lectures, quizzes, an AI conversation partner, and a social league.
+Hangyul is a mobile Korean-language learning service for non-native speakers. Learning is organized into two tracks that differ by the type of content recommended:
+
+- **Conversation (회화) track** → recommends **sentences** for study and practice.
+- **TOPIK track** → recommends **questions** for the user to solve.
+
+Each track has a single **`current_level`** representing the difficulty at which the user wants recommendations. There is no separate target level. The current level **auto-promotes** as the user meets per-track criteria. Recommendations can also be requested via free-form prompts (e.g. "sentences I can use when ordering food"). When the user answers a recommended TOPIK question incorrectly, the AI chatbot is invoked to explain the mistake.
+
+The service combines streak-driven daily sessions, adaptive recommendations, video lectures, quizzes, an AI conversation partner, and a social league.
 
 ### 1.1 Primary user goals
 
 | Goal | Supporting features |
 |---|---|
-| Learn enough Korean for everyday conversation | Sentence study, HangulAI chat, listening/speaking lessons |
-| Pass a target TOPIK grade | TOPIK track, level-gated lessons, mock quizzes |
+| Learn enough Korean for everyday conversation | Conversation track (sentence recommendations), HangulAI chat, listening lessons |
+| Practise TOPIK questions at the right level | TOPIK track (question recommendations), quiz attempts, AI explanations on mistakes |
 | Build a daily habit | Streaks, goals, reminders, push notifications |
 | Stay motivated | League tiers, seasonal rankings, friends feed |
 | Get help | FAQs, 1:1 inquiry, announcements |
@@ -166,10 +173,10 @@ Each module below maps to a section of the Figma design, a module under `src/mod
 
 **Business rules**
 
-- `purpose` selects the primary category.
-  - `conversation`: seeds the Conversation lectures & sentences `current_level` from the `speaking_level` answer.
-  - `topik`: seeds both TOPIK progressions to `current_level = 1`, and stores `topik_target` as the TOPIK `target_grade` (1–6).
-- All seeded values are editable from Settings later.
+- `purpose` selects the primary track.
+  - `conversation`: `speaking_level` seeds the Conversation track's initial `current_level`.
+  - `topik`: `topik_target` seeds the TOPIK track's initial `current_level` (1..6, treated as 급수).
+- Both tracks exist for every user; `purpose` only determines which one the app opens to by default. Levels are editable from Settings and also auto-promote over time (see 4.6).
 - Daily goal defaults to 10 min; allowed 5–120 min.
 
 ---
@@ -216,57 +223,61 @@ Each module below maps to a section of the Figma design, a module under `src/mod
 
 ---
 
-### 4.6 Learning categories & progressions (`learning`)
+### 4.6 Learning tracks (`learning`)
 
-Learning is split into **two top-level categories**, each containing **two independent progressions** that advance separately:
+Two tracks, distinguished by the type of recommended content:
 
-| Category | Track ID | Progressions |
-|---|---|---|
-| Conversation (회화) | `trk_conversation` | lectures · sentences |
-| TOPIK | `trk_topik` | lectures · sentences |
+| Track | Track ID | Recommended content | Level scale |
+|---|---|---|---|
+| Conversation (회화) | `trk_conversation` | sentences for study & practice | 1..10 |
+| TOPIK | `trk_topik` | questions to solve | 1..6 (급수) |
 
-For every (user, category, progression) triple, the server maintains a **`current_level`** that advances as the user completes content.
+Each track stores a single **`current_level`** per user — the difficulty at which the user wants recommendations. There is no target level.
 
-TOPIK additionally carries a **`target_grade`** at the category level — the user's goal 급수 (1–6), captured at onboarding.
+**Auto-promotion**
+
+- `current_level` advances automatically when per-track criteria are met. The criteria are configured server-side and may differ per track; examples: consecutive-day streak at a level, threshold of completed sentences, rolling accuracy on recommended questions.
+- On promotion, the server emits a `LevelUpEvent` (surfaced in the dashboard / notifications).
+
+**Manual override**
+
+Users can also change `current_level` directly from Settings (see 4.17) — useful when starting from above beginner or stepping back to reinforce a level.
 
 **Defaults**
 
-- **TOPIK:** both lectures and sentences start at `current_level = 1`; `target_grade` comes from onboarding `topik_target` (1–6).
-- **Conversation:** `current_level` for both lectures and sentences is seeded from onboarding `speaking_level`.
+- **Conversation:** seeded from onboarding `speaking_level`.
+- **TOPIK:** seeded from onboarding `topik_target` (1..6 = 급수).
 
-Users can override the `current_level` of any progression — and, for TOPIK, the `target_grade` — from Settings at any time (see 4.17).
-
-**Screens:** category / progression selector · level list (학습 레벨 1–N) · calendar grid · stats charts · video player · sentence list.
+**Screens:** track selector · level badge · auto-promotion celebration · calendar grid · stats charts · video player · sentence list · TOPIK question list.
 
 **Endpoints**
 
 | Method & Path | Purpose |
 |---|---|
-| `GET /tracks` | List the two categories with their progression metadata. |
-| `GET /tracks/{track_id}` | Category detail. |
-| `GET /tracks/{track_id}/progressions/{kind}/levels` | Levels in a progression. `kind` ∈ `lectures`, `sentences`. |
-| `GET /me/learning` | My `current_level` per (category, progression), plus TOPIK `target_grade`. |
-| `PATCH /me/learning/{track_id}/{kind}` | Update my `current_level` in a progression. |
-| `PATCH /me/learning/trk_topik` | Update my TOPIK `target_grade` (1–6). |
-| `GET /learning/calendar?from=&to=` | Daily study calendar (aggregated across categories). |
+| `GET /tracks` | List the two tracks with their metadata. |
+| `GET /tracks/{track_id}` | Track detail. |
+| `GET /tracks/{track_id}/levels` | Levels available in a track (1..N) with labels. |
+| `GET /me/learning` | My `current_level` per track. |
+| `PATCH /me/learning/{track_id}` | Manually update my `current_level` in a track. |
+| `GET /me/learning/events?type=level_up&cursor=` | Auto-promotion history. |
+| `GET /learning/calendar?from=&to=` | Daily study calendar. |
 | `GET /learning/stats?range=week\|month\|year\|all` | Aggregated stats for charts. |
-| `GET /lectures?track_id=&level=` | List lectures for a (category, level) — always the lectures progression. |
+| `GET /lectures?track_id=&level=` | List lectures for a (track, level). Lectures are a supplemental content type, primarily for TOPIK. |
 | `GET /lectures/{id}` | Lecture detail. |
 | `GET /lectures/{id}/video` | Signed video URL (HLS, TTL ≤ 1 h). |
 | `POST /lectures/{id}/progress` | Playback heartbeat and completion signal. |
 
 **Business rules**
 
-- Lectures and sentence study advance **independently** — completing a lecture never moves the sentence-study `current_level`, and vice versa.
-- Within a progression, levels unlock sequentially (level N requires 100 % of level N-1).
-- Video URLs are signed and expire; clients must refresh on expiry.
-- XP is awarded once per (user, lecture) on completion.
+- Conversation and TOPIK levels are independent — advancing in one never moves the other.
+- Auto-promotion is additive (criterion-based, evaluated on relevant events such as quiz attempts or sentence completions); demotion by time does not happen — only manual step-back via Settings.
+- Lectures remain optional content and are not required for auto-promotion.
 
 ---
 
 ### 4.7 Sentence study (`sentences`)
 
-Sentence study is one of the two progressions in each category (see 4.6). The study feed is scoped to the user's active category and its sentence-progression `current_level`, which advances independently from the lectures progression.
+Sentences are the recommended content type for the Conversation track. The feed is filtered by the user's Conversation `current_level` by default, and can also be driven by free-form prompt (see 4.18). Bookmarking, audio, and review-complete events continue to feed the Conversation auto-promotion criteria.
 
 **Screens:** sentence list with audio, bookmark, grammar points · bookmarked list · recently studied.
 
@@ -274,7 +285,7 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 
 | Method & Path | Purpose |
 |---|---|
-| `GET /sentences?track_id=&level=&topic=&cursor=` | Study feed — defaults to the user's active category and sentence-progression `current_level` |
+| `GET /sentences?level=&topic=&cursor=` | Study feed — defaults to the user's Conversation `current_level`. |
 | `GET /sentences/bookmarks` | Bookmarked sentences |
 | `GET /sentences/recently-studied` | Recency list |
 | `GET /sentences/{id}` | Sentence detail with examples |
@@ -292,7 +303,9 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 
 ### 4.8 Quizzes (`quizzes`)
 
-**Screens:** MCQ (덕분에/동안/처럼/만큼) · typing quiz with Korean keyboard · celebration / retry.
+Quizzes are the recommended content type for the TOPIK track. Questions are pulled from the user's TOPIK `current_level` by default, and can also be requested via free-form prompt (see 4.18). **On an incorrect answer**, the server starts an AI-chat explanation conversation and returns its id in the attempt response; the client links the user into that chat to receive a richer explanation (see 4.10).
+
+**Screens:** MCQ (덕분에/동안/처럼/만큼) · typing quiz with Korean keyboard · celebration / retry · "AI explains the mistake" deep link.
 
 **Endpoints**
 
@@ -310,6 +323,8 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 - Attempt XP: +10 correct, 0 wrong; bonus +5 if streak of 5 correct in a row.
 - Daily set is deterministic per (user, date); safe to re-fetch.
 - Explanations localized by `language` query or profile default.
+- When a recommended TOPIK attempt is incorrect, the server starts an AI-chat conversation seeded with the question + the user's answer + the correct answer, and returns its `chatbot_conversation_id` in the attempt response. The client opens `/ai/conversations/{id}/messages` to continue.
+- Correct TOPIK attempts feed the TOPIK auto-promotion criteria in the learning module.
 
 ---
 
@@ -335,7 +350,7 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 
 ### 4.10 한글AI chat (`ai-chat`)
 
-**Screens:** "물어보기" conversation with chat bubbles + suggestion chips.
+**Screens:** "물어보기" conversation with chat bubbles + suggestion chips · "AI explains the mistake" conversations launched from a wrong TOPIK attempt (4.8).
 
 **Endpoints**
 
@@ -351,6 +366,7 @@ Sentence study is one of the two progressions in each category (see 4.6). The st
 - Content moderation: prompt + response filtered before return.
 - Free plan: 10 AI messages / day; subscribers unlimited (429 `rate_limited` when exceeded).
 - Suggestion chips are optional follow-ups surfaced by the model.
+- Explanation conversations opened from a wrong TOPIK attempt are pre-seeded by the server with the question, the user's answer, the correct answer, and a request for a clear explanation; the first assistant reply is the explanation.
 
 ---
 
@@ -523,7 +539,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 ### 4.17 App settings (`settings`)
 
-**Screens:** language · theme · audio · vibration · romanization · daily goal · active category · current level per progression · TOPIK target grade.
+**Screens:** language · theme · audio · vibration · romanization · daily goal · active track · current level per track.
 
 **Endpoints**
 
@@ -531,21 +547,41 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 |---|---|
 | `GET /settings/me` | UI preferences |
 | `PUT /settings/me` | Update UI preferences |
-| `GET /me/learning` | Read `current_level` per progression and TOPIK `target_grade` (see 4.6) |
-| `PATCH /me/learning/{track_id}/{kind}` | Change `current_level` in a progression (see 4.6) |
-| `PATCH /me/learning/trk_topik` | Change TOPIK `target_grade` (see 4.6) |
+| `GET /me/learning` | Read `current_level` per track (see 4.6) |
+| `PATCH /me/learning/{track_id}` | Change `current_level` in a track (see 4.6) |
 
 **Business rules**
 
 - Language change is propagated to `users.language` automatically.
 - `daily_goal_minutes` bounded 5–120.
-- Current-level overrides delegate to `PATCH /me/learning/{track_id}/{kind}`; TOPIK target-grade changes go to `PATCH /me/learning/trk_topik`.
+- Manual level changes delegate to `PATCH /me/learning/{track_id}`. Auto-promotion continues from the new level on the next event.
 
 ---
 
-### 4.18 Recommendations (internal, `recommendations`)
+### 4.18 Recommendations (`recommendations`)
 
-The pre-existing recommendation engine module. Consumed by dashboard & sentence feed to pick next-best content.
+The primary surface for track content. Supports both *default* level-based recommendations and *prompt-driven* requests where the user asks for specific learning content.
+
+**Recommendation modes**
+
+- **Level-based (default):** server uses the caller's `current_level` in the requested track plus recent history to pick items.
+- **Prompt-driven:** the client passes a free-form `prompt` such as "sentences I can use when ordering food" or "TOPIK 4급 level grammar questions about 피동". The server uses an LLM to interpret and select items that satisfy the request.
+
+**Endpoints**
+
+| Method & Path | Purpose |
+|---|---|
+| `POST /recommendations/sentences` | Conversation-track recommendation — returns sentences (body: `{level?, prompt?, count?}`) |
+| `POST /recommendations/questions` | TOPIK-track recommendation — returns quiz questions (body: `{level?, prompt?, count?}`) |
+| `GET /recommendations/history?kind=sentences\|questions&cursor=` | Recently recommended items (for "again"/"similar" follow-ups) |
+
+**Business rules**
+
+- If `level` is omitted, the user's current level in that track is used.
+- `prompt` is capped at 500 chars and moderated before being sent to the LLM.
+- `count` defaults to 5, max 20.
+- Items returned by `/recommendations/questions` use the same `QuizQuestion` shape as §4.8; attempts are submitted through the quiz attempt endpoint.
+- Items returned by `/recommendations/sentences` use the same `Sentence` shape as §4.7; bookmarks and listen events flow through the sentence endpoints.
 
 ---
 
@@ -582,17 +618,26 @@ pending ──decline──▶ declined
 pending ──cancel──▶ canceled
 ```
 
+### 5.5 Track level auto-promotion
+
+```
+current_level N ──per-track criteria met──▶ current_level N+1 (emits LevelUpEvent)
+current_level N ──manual override from Settings──▶ current_level M (any 1..max)
+```
+
+No automatic demotion — manual step-back only.
+
 ---
 
 ## 6. Domain Glossary
 
 | Term | Meaning |
 |---|---|
-| **Category** | Top-level learning grouping: Conversation (회화) or TOPIK. |
-| **Track** | Synonym for Category in API paths (`/tracks`, `trk_conversation`, `trk_topik`). |
-| **Progression** | An independent level sequence inside a category: `lectures` or `sentences`. Advances separately per user. |
-| **Level** | Ordered unit within a progression (학습 레벨 1–N). |
-| **Lecture** | Video / reading / listening unit inside the lectures progression. |
+| **Track** | Top-level learning split: Conversation (회화) or TOPIK. Each has its own `current_level`. |
+| **Current level** | The user's chosen difficulty for recommendations in a track. Auto-promotes on criteria; editable from Settings. |
+| **Level auto-promotion** | Server-side event raising `current_level` when per-track criteria are met. |
+| **Recommendation** | Server-picked content — sentences for Conversation, questions for TOPIK. May be level-based or prompt-driven. |
+| **Lecture** | Supplemental video / reading / listening unit, primarily for TOPIK; does not affect auto-promotion. |
 | **Sentence** | Smallest studyable item with audio and grammar tags. |
 | **Quiz** | MCQ / fill-blank / typing / ordering / listening. |
 | **Attempt** | A single submitted answer on a quiz. |
