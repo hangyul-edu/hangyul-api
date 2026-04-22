@@ -581,7 +581,7 @@
 | `POST /recommendations/sentences` | 회화 트랙 추천 — 문장 반환 (body: `{level?, prompt?, count?}`) |
 | `POST /recommendations/questions` | TOPIK 트랙 추천 — 퀴즈 문제 반환 (body: `{level?, prompt?, count?}`) |
 | `GET /recommendations/history?kind=sentences\|questions&cursor=` | 최근 추천된 항목 (재요청·유사 항목 조회용) |
-| `POST /recommendations` | 초기 스캐폴드와 호환되는 레거시 내부 추천 엔드포인트. 새 클라이언트는 위 sentences / questions 엔드포인트를 사용해야 한다. |
+| `POST /recommendations` | 초기 프로젝트 셋업과의 하위 호환을 위해 남겨둔 레거시 내부 추천 엔드포인트. 새 클라이언트는 위 sentences / questions 엔드포인트를 사용해야 한다. |
 
 **비즈니스 규칙**
 

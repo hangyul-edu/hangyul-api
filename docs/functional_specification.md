@@ -581,7 +581,7 @@ The primary surface for track content. Supports both *default* level-based recom
 | `POST /recommendations/sentences` | Conversation-track recommendation — returns sentences (body: `{level?, prompt?, count?}`) |
 | `POST /recommendations/questions` | TOPIK-track recommendation — returns quiz questions (body: `{level?, prompt?, count?}`) |
 | `GET /recommendations/history?kind=sentences\|questions&cursor=` | Recently recommended items (for "again"/"similar" follow-ups) |
-| `POST /recommendations` | Legacy internal recommender (back-compat with the original scaffold). New clients should use the sentences / questions endpoints above. |
+| `POST /recommendations` | Legacy internal recommender kept for backward compatibility with the initial project setup. New clients should use the sentences / questions endpoints above. |
 
 **Business rules**
 
