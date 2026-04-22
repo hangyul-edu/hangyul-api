@@ -337,7 +337,8 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 | `GET /lectures?track_id=&level=` | List lectures for a (track, level). Lectures are a supplemental content type, primarily for TOPIK. |
 | `GET /lectures/{lecture_id}` | Lecture detail. |
 | `GET /lectures/{lecture_id}/video` | Signed video URL (HLS, TTL ≤ 1 h). |
-| `POST /lectures/{lecture_id}/progress` | Playback heartbeat and completion signal. |
+| `POST /lectures/{lecture_id}/progress` | Playback heartbeat (position only). Does not mark completion. |
+| `POST /lectures/{lecture_id}/complete` | Mark the lecture as finished watching. Idempotent; subsequent calls return `already_completed=true` with `xp_earned=0`. May emit a `LevelUpEvent` when it triggers TOPIK auto-promotion. |
 
 **Business rules**
 
@@ -346,6 +347,7 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 - The user can manually change `current_level` in either direction (up or down) at any time, including returning to a level already visited (e.g. `1 → 2 → 3 → 2`). **Any manual change resets the in-flight promotion progress on that track**: the user must re-accumulate activity at the new level to be evaluated for promotion again.
 - Lectures are optional content and do not affect auto-promotion.
 - Each `Lecture` carries `access ∈ {"free", "premium"}`. Free members can list all lectures and see metadata but only play `access="free"` ones. `GET /lectures/{lecture_id}/video` returns `402 subscription_required` for a non-premium caller requesting a `premium` lecture; premium/trial callers (`membership.is_premium=true`) play anything.
+- `POST /lectures/{lecture_id}/progress` carries only `position_seconds` — it is a position heartbeat and never marks completion. Only `POST /lectures/{lecture_id}/complete` flips the flag, grants XP, and feeds the TOPIK auto-promotion criteria. Re-calling `/complete` is safe (idempotent): subsequent responses carry `already_completed=true` and `xp_earned=0`.
 
 **In-lesson popups**
 
