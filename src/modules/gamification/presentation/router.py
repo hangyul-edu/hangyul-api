@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 
@@ -17,19 +18,22 @@ from src.modules.gamification.presentation.schemas import (
 points_router = APIRouter(prefix="/points", tags=["gamification"])
 leagues_router = APIRouter(prefix="/leagues", tags=["gamification"])
 
+LEAGUE_TZ = ZoneInfo("America/New_York")
+
 
 def _current_week_season() -> LeagueSeason:
-    now = datetime.now(timezone.utc)
-    iso_year, iso_week, iso_weekday = now.isocalendar()
-    monday = now - timedelta(days=iso_weekday - 1)
-    monday = monday.replace(hour=0, minute=0, second=0, microsecond=0)
-    sunday_end = monday + timedelta(days=6, hours=21)
+    now_et = datetime.now(LEAGUE_TZ)
+    iso_year, iso_week, iso_weekday = now_et.isocalendar()
+    monday_et = now_et - timedelta(days=iso_weekday - 1)
+    monday_et = monday_et.replace(hour=0, minute=0, second=0, microsecond=0)
+    sunday_end_et = monday_et + timedelta(days=6, hours=21)
     season_id = f"{iso_year}-W{iso_week:02d}"
     return LeagueSeason(
         season_id=season_id,
         name=f"Week {iso_week}, {iso_year}",
-        starts_at=monday,
-        ends_at=sunday_end,
+        timezone="America/New_York",
+        starts_at=monday_et,
+        ends_at=sunday_end_et,
         is_current=True,
     )
 

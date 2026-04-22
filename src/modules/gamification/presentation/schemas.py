@@ -53,10 +53,20 @@ class MyLeaguePosition(BaseModel):
 
 
 class LeagueSeason(BaseModel):
-    season_id: str = Field(description="ISO-week label, e.g. '2026-W17'.")
+    season_id: str = Field(
+        description="ISO-week label computed in America/New_York (US Eastern), e.g. '2026-W17'."
+    )
     name: str
-    starts_at: datetime = Field(description="Monday 00:00 of the season week.")
-    ends_at: datetime = Field(description="Sunday 21:00 of the season week.")
+    timezone: str = Field(
+        default="America/New_York",
+        description="Reference timezone for season boundaries. Handles EST/EDT automatically.",
+    )
+    starts_at: datetime = Field(
+        description="Monday 00:00 ET (America/New_York) of the season week.",
+    )
+    ends_at: datetime = Field(
+        description="Sunday 21:00 ET (America/New_York) of the season week.",
+    )
     is_current: bool = False
 
 
