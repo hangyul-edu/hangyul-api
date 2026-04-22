@@ -605,7 +605,7 @@
 |---|---|
 | `GET /points/me` | 잔액 (누적 / 주간 / 시즌) |
 | `GET /points/history` | 포인트 적립 이력 |
-| `GET /leagues/me` | 현재 티어, 그룹, 순위, 승급·강등 기준 |
+| `GET /leagues/me` | 현재 시즌의 내 리그 상태 — `{season_id, tier, tier_label, group_id, group_size, rank, band, season_points, last_activity_at, promote_cutoff_rank, demote_cutoff_rank, can_promote, can_demote, previous_tier, next_tier}`. "내가 어느 리그에 있나", "그룹에서 몇 등인가", "내 점수는?"을 한 번에 반환. |
 | `GET /leagues/current` | 진행 중인 주간 시즌 메타데이터 |
 | `GET /leagues/current/rankings` | 내 현재 그룹의 실시간 리더보드 |
 | `GET /leagues/current/groups/{group_id}/rankings` | 특정 그룹(예: 친구의 그룹) 리더보드 |
@@ -617,6 +617,8 @@
 - 순위는 실시간으로 갱신된다(수 초 단위 지연은 허용).
 - 시즌이 종료되면 `RankingEntry.outcome`이 위 구간 기준으로 `promote` / `maintain` / `demote` 중 하나로 설정된다.
 - 그룹 배정은 시즌 내에서 고정되며, 시즌 시작 시점에 재계산된다.
+- `MyLeaguePosition.band`는 `rank`와 승급·강등 기준으로부터 파생되며 시즌 진행 중에도 `RankingEntry.outcome`과 동일한 값을 노출한다. 덕분에 클라이언트는 "승급권 안전" / "현재 위치 유지" / "강등 위험" 배너를 별도 계산 없이 그릴 수 있다.
+- `MyLeaguePosition.season_points`는 리더보드 정렬 키(내림차순)와 동일하며, 동점은 `last_activity_at`(최근 활동)이 앞선 쪽이 상위다.
 - 주소록 친구 기준으로 순위를 비교(예: 리더보드에 주소록 친구 하이라이트)하려면 `settings.contact_access_granted == true`여야 한다(§4.17 참조). 동의가 없으면 리더보드는 그대로 노출되고 주소록 친구 하이라이트만 생략된다.
 
 ---

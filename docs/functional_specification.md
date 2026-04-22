@@ -605,7 +605,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 |---|---|
 | `GET /points/me` | Balance (total / weekly / season) |
 | `GET /points/history` | Points-earning events |
-| `GET /leagues/me` | My current tier, group, rank, and promote/demote cutoffs |
+| `GET /leagues/me` | My league standing for the current season — `{season_id, tier, tier_label, group_id, group_size, rank, band, season_points, last_activity_at, promote_cutoff_rank, demote_cutoff_rank, can_promote, can_demote, previous_tier, next_tier}`. Answers "what league am I in?", "where am I in the group?", and "what's my score?" in one call. |
 | `GET /leagues/current` | Active weekly season metadata |
 | `GET /leagues/current/rankings` | Live leaderboard of my current group |
 | `GET /leagues/current/groups/{group_id}/rankings` | Leaderboard for a specific group (e.g. a friend's) |
@@ -617,6 +617,8 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 - Rankings update in real time; a few seconds of lag is acceptable.
 - At season close, `RankingEntry.outcome` is set to `promote` / `maintain` / `demote` per the bands above.
 - Group assignment is stable within a season and recomputed at season start.
+- `MyLeaguePosition.band` is derived from `rank` vs the cutoffs and mirrors `RankingEntry.outcome` for the caller mid-season — so the client can render a "Safe — in the promotion zone" / "Hold your spot" / "You're at risk" banner without recomputing anything.
+- `MyLeaguePosition.season_points` is the same value the leaderboard is sorted by (desc). Ties break on `last_activity_at` (more recent wins).
 - Comparing rankings with phone-book friends (e.g. highlighting address-book contacts on the leaderboard) requires `settings.contact_access_granted == true` (see §4.17). Without consent, the leaderboard still renders — just without the contact-friend callouts.
 
 ---
