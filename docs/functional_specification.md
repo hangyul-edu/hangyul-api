@@ -220,16 +220,16 @@ The 5 speaking-level options (`SpeakingLevel` codes, shown top-to-bottom in the 
 
 ### 4.4 Subscriptions (`subscriptions`)
 
-**Screens:** paywall on dashboard · plan comparison ($7.99 / $5.99 promo monthly / $54 one-time 12-month) · purchase confirm · restore · purchase history.
+**Screens:** paywall on dashboard · plan comparison ($7.99 / $5.99 promo monthly / $54 annual) · purchase confirm · restore · purchase history.
 
 **Plan cadences**
 
-| `plan_id` | `interval` | `billing_mode` | What it means |
-|---|---|---|---|
-| `plan_monthly` | `month` | `recurring` | Auto-renewing monthly subscription. `current_period_end` rolls forward each successful charge. |
-| `plan_yearly` | `year` | `one_time` | Single 12-month charge with no automatic renewal. Access expires at `expires_at` unless the user repurchases. |
+Both plans auto-renew on the card registered to the account unless the user cancels. The only difference is the renewal interval.
 
-`SubscriptionPlan` carries both `interval` (cadence) and `billing_mode` (recurring vs one-time) so the client can render the right paywall copy without inferring from the interval alone.
+| `plan_id` | `interval` | What it means |
+|---|---|---|
+| `plan_monthly` | `month` | Auto-renews every month. `current_period_end` and `next_billing_at` roll forward one month on each successful charge. |
+| `plan_yearly` | `year` | Auto-renews every 12 months. `current_period_end` and `next_billing_at` roll forward one year on each successful charge. |
 
 **Trial lifecycle**
 
@@ -248,18 +248,17 @@ Every user is eligible for a **7-day free trial** the first time they sign up fo
 `expires_at` is the canonical "when does access end if nothing changes" timestamp:
 
 - While in trial → equals `trial_expires_at`.
-- On a monthly recurring plan → equals `current_period_end` (advances on each renewal).
-- On the one-time 12-month plan → equals the single-purchase expiration date (start + 12 months).
+- On an active plan → equals `current_period_end` (advances one month or one year on each successful auto-renewal).
+- After cancellation → stays at the final `current_period_end` until that date passes; then `status` flips to `expired`.
 
-`current_period_start` / `current_period_end` describe the billing cycle for the monthly plan; on the yearly one-time plan they may be equal to the start and `expires_at` respectively.
+`current_period_start` / `current_period_end` describe the current billing cycle for whichever cadence the user picked (monthly = 1 month, yearly = 12 months).
 
 **Next billing date**
 
 `next_billing_at` is the date of the next scheduled auto-renewal charge — the field the subscription-management page shows as "Next billing date". It is null whenever no auto-charge is queued:
 
-- On a live recurring monthly plan → equals `current_period_end`.
-- After `POST /subscriptions/cancel` on a monthly plan → null (auto-renewal is off).
-- On the 12-month one-time plan → null (the plan never auto-renews).
+- On any live plan (monthly or yearly) → equals `current_period_end`.
+- After `POST /subscriptions/cancel` → null (auto-renewal is off for both cadences).
 - For `status ∈ {"canceled", "expired"}` → null.
 
 **Payment history**
@@ -281,8 +280,7 @@ Every user is eligible for a **7-day free trial** the first time they sign up fo
 
 - The 7-day trial is granted once per user (first signup). `trial_started=true` permanently disqualifies the user from another free trial.
 - **Cancellation never revokes access immediately.** `POST /subscriptions/cancel` only stops the auto-renewal — the server disables the automatic charge on the card registered to the account. The user retains premium access until `expires_at`, which equals the final `current_period_end`.
-- Monthly plan (`billing_mode="recurring"`): cancel flips `cancel_at_period_end=true`, clears `next_billing_at`, and returns `expires_at` set to the end of the already-paid period.
-- 12-month plan (`billing_mode="one_time"`): there is no auto-renewal to cancel; the endpoint is a no-op that still returns the existing `expires_at` for UI parity.
+- On both plans, cancellation flips `cancel_at_period_end=true` and clears `next_billing_at`. The monthly plan keeps access for the rest of the current month; the yearly plan keeps access for the rest of the current 12-month period.
 - Apple / Google purchases are server-verified via receipt; Stripe via webhook. The consumer API is the same `MySubscription` shape regardless of provider.
 - Clients should key "is the user subscribed" off `status in {"trial", "active"}` and `expires_at > now`, not off any single field.
 
@@ -825,9 +823,9 @@ pending ──grader_fail──▶ failed
 (no subscription) ──start trial──▶ trial ──first charge──▶ active
                                     │
                                     └──trial_expires_at reached & not paid──▶ expired
+active ──successful auto-renewal──▶ active (current_period_end advances 1 month or 12 months)
 active ──payment fails──▶ past_due ──grace period ends──▶ expired
 active ──cancel──▶ active (cancel_at_period_end=true) ──current_period_end──▶ canceled
-one_time plan: trial → active ──expires_at──▶ expired   (no automatic renewal)
 ```
 
 ### 5.4 Track level auto-promotion
