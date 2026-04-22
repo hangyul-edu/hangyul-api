@@ -10,6 +10,7 @@ from src.modules.auth.presentation.router import router as auth_router
 from src.modules.dashboard.presentation.router import router as dashboard_router
 from src.modules.gamification.presentation.router import leagues_router, points_router
 from src.modules.learning.presentation.router import (
+    courses_router,
     lectures_router,
     learning_router,
     me_learning_router,
@@ -88,6 +89,7 @@ app.include_router(onboarding_router)
 app.include_router(subscriptions_router)
 app.include_router(dashboard_router)
 app.include_router(tracks_router)
+app.include_router(courses_router)
 app.include_router(learning_router)
 app.include_router(lectures_router)
 app.include_router(me_learning_router)

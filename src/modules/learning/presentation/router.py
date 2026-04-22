@@ -9,6 +9,9 @@ from src.common.security.auth import CurrentUser, get_current_user
 from src.modules.learning.presentation.schemas import (
     TRACK_MAX_LEVEL,
     CalendarResponse,
+    Course,
+    CourseDetail,
+    CoursesResponse,
     Lecture,
     LectureCompletionResponse,
     LectureProgressRequest,
@@ -20,6 +23,8 @@ from src.modules.learning.presentation.schemas import (
     LevelsResponse,
     MyLearningState,
     MyTrackState,
+    SpeakPracticeItem,
+    SpeakPracticeResponse,
     StatsRange,
     StatsResponse,
     Track,
@@ -30,6 +35,7 @@ from src.modules.learning.presentation.schemas import (
 tracks_router = APIRouter(prefix="/tracks", tags=["learning"])
 learning_router = APIRouter(prefix="/learning", tags=["learning"])
 lectures_router = APIRouter(prefix="/lectures", tags=["learning"])
+courses_router = APIRouter(prefix="/courses", tags=["learning"])
 me_learning_router = APIRouter(prefix="/me/learning", tags=["learning"])
 
 _TRACK_CATALOG: dict[str, Track] = {
@@ -81,6 +87,59 @@ def list_levels(track_id: str, user: CurrentUser = Depends(get_current_user)) ->
         for i in range(1, track.max_level + 1)
     ]
     return LevelsResponse(items=items)
+
+
+@tracks_router.get(
+    "/{track_id}/courses",
+    response_model=CoursesResponse,
+    summary="List courses available in a track",
+)
+def list_courses_in_track(
+    track_id: str, user: CurrentUser = Depends(get_current_user)
+) -> CoursesResponse:
+    _require_track(track_id)
+    return CoursesResponse(items=[])
+
+
+@courses_router.get(
+    "/{course_id}",
+    response_model=CourseDetail,
+    summary="Course detail — includes the ordered lesson list with per-user completion state",
+)
+def get_course(course_id: str, user: CurrentUser = Depends(get_current_user)) -> CourseDetail:
+    sample_lessons = [
+        Lecture(
+            lecture_id=f"lec_{course_id}_01",
+            track_id="trk_topik",
+            course_id=course_id,
+            level=1,
+            title="인사 표현 (1)",
+            kind="video",
+            duration_seconds=180,
+            completed=False,
+        ),
+        Lecture(
+            lecture_id=f"lec_{course_id}_02",
+            track_id="trk_topik",
+            course_id=course_id,
+            level=1,
+            title="인사 표현 (2)",
+            kind="video",
+            duration_seconds=200,
+            completed=False,
+        ),
+    ]
+    return CourseDetail(
+        course_id=course_id,
+        track_id="trk_topik",
+        title="TOPIK 1급 입문",
+        description="기초 인사와 자기소개 표현을 다루는 코스입니다.",
+        level=1,
+        cover_image_url=None,
+        lesson_count=len(sample_lessons),
+        completed_lesson_count=sum(1 for lec in sample_lessons if lec.completed),
+        lessons=sample_lessons,
+    )
 
 
 @me_learning_router.get("", response_model=MyLearningState, summary="My current level per track")
@@ -237,6 +296,30 @@ def report_lecture_progress(
         last_watched_at=datetime.now(timezone.utc),
         completed=False,
     )
+
+
+@lectures_router.get(
+    "/{lecture_id}/speak-practice",
+    response_model=SpeakPracticeResponse,
+    summary="Speak-only practice set for a lesson (filters conversation_speak popups)",
+    description=(
+        "Returns the `conversation_speak` popups from this lesson, in playback order, for the "
+        "'mic button next to a lesson' → 'practice just the repeat-after-me sentences' flow. Each "
+        "item carries popup_id, at_second, and sentence_id. The client fetches the full Sentence "
+        "via GET /sentences/{sentence_id} and submits attempts through "
+        "POST /sentences/{sentence_id}/speech-attempts."
+    ),
+)
+def get_speak_practice(
+    lecture_id: str, user: CurrentUser = Depends(get_current_user)
+) -> SpeakPracticeResponse:
+    lecture = get_lecture(lecture_id, user)
+    items = [
+        SpeakPracticeItem(popup_id=p.popup_id, at_second=p.at_second, sentence_id=p.sentence_id or "")
+        for p in lecture.popups
+        if p.kind == "conversation_speak" and p.sentence_id is not None
+    ]
+    return SpeakPracticeResponse(lecture_id=lecture_id, items=items)
 
 
 @lectures_router.post(

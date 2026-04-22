@@ -117,6 +117,13 @@ class LecturePopup(BaseModel):
 class Lecture(BaseModel):
     lecture_id: str
     track_id: str
+    course_id: str | None = Field(
+        default=None,
+        description=(
+            "Course this lesson belongs to (Track → Course → Lesson). Null when the lesson is not "
+            "grouped into a course."
+        ),
+    )
     level: int
     title: str
     kind: LectureKind
@@ -150,6 +157,55 @@ class Lecture(BaseModel):
 
 class LecturesResponse(BaseModel):
     items: list[Lecture]
+
+
+class Course(BaseModel):
+    course_id: str
+    track_id: str
+    title: str
+    description: str | None = None
+    level: int | None = Field(
+        default=None, description="Track level this course belongs to (if any)."
+    )
+    cover_image_url: str | None = None
+    lesson_count: int = Field(ge=0)
+    completed_lesson_count: int = Field(
+        ge=0, description="How many lessons in the course the caller has finished."
+    )
+
+
+class CoursesResponse(BaseModel):
+    items: list[Course]
+
+
+class CourseDetail(Course):
+    lessons: list[Lecture] = Field(
+        description=(
+            "Ordered list of lessons (lectures) in the course. Each carries the caller's "
+            "`completed` flag plus `popups[]`, so the UI can render both the lesson list with "
+            "completion state and drill into any individual lesson."
+        ),
+    )
+
+
+class SpeakPracticeItem(BaseModel):
+    popup_id: str = Field(description="The originating `conversation_speak` popup on the lesson.")
+    at_second: int = Field(
+        ge=0, description="Offset within the lesson where the popup would have fired during normal playback."
+    )
+    sentence_id: str = Field(description="Sentence the user reads aloud.")
+
+
+class SpeakPracticeResponse(BaseModel):
+    lecture_id: str
+    items: list[SpeakPracticeItem] = Field(
+        description=(
+            "The `conversation_speak` popups from this lesson, in playback order. The full "
+            "Sentence payload (with audio, display_text, blanks, translation) is fetched via "
+            "GET /sentences/{sentence_id} and the user practices each via "
+            "POST /sentences/{sentence_id}/speech-attempts (see §4.7)."
+        ),
+    )
 
 
 class LectureVideoResponse(BaseModel):
