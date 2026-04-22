@@ -10,6 +10,7 @@ from src.common.api.pagination import CursorPage
 SentenceStatus = Literal["new", "learning", "mastered", "bookmarked"]
 AudioFormat = Literal["mp3", "wav", "aac", "opus"]
 SpeechFeedback = Literal["correct", "missed_words", "bad_pronunciation", "unclear_audio"]
+SavedSentenceSort = Literal["recent", "most_incorrect", "longest_not_reviewed"]
 
 
 class SentenceExample(BaseModel):
@@ -76,6 +77,28 @@ class Sentence(BaseModel):
     bookmarked: bool = False
     status: SentenceStatus = "new"
     last_studied_at: datetime | None = None
+    saved_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When the user saved this sentence via POST /sentences/{sentence_id}/bookmark. Null when "
+            "not saved. Populated on every response that carries a saved sentence."
+        ),
+    )
+    incorrect_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of times the user got this sentence wrong on speech-attempts. Used to power the "
+            "'most frequently answered incorrectly' sort on the saved list."
+        ),
+    )
+    last_reviewed_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Most recent review event — successful speech attempt, listen, or re-open from the saved "
+            "list. Used to power the 'longest not reviewed' sort."
+        ),
+    )
 
 
 class SentencePage(CursorPage[Sentence]):

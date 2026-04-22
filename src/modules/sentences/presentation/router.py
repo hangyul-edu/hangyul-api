@@ -11,6 +11,7 @@ from src.modules.sentences.presentation.schemas import (
     BookmarkResponse,
     ListenEventRequest,
     ListenEventResponse,
+    SavedSentenceSort,
     Sentence,
     SentenceAudio,
     SentencePage,
@@ -43,8 +44,20 @@ def list_sentences(
     return SentencePage(items=[], next_cursor=None, has_more=False)
 
 
-@router.get("/bookmarks", response_model=SentencePage, summary="List bookmarked sentences")
+@router.get(
+    "/bookmarks",
+    response_model=SentencePage,
+    summary="List saved (bookmarked) sentences for the saved-list screen",
+    description=(
+        "Returns every sentence the user saved — whether via the save button on a recommendation "
+        "card or on an in-lesson modal. Each item carries the full Sentence shape, so the UI can "
+        "show the Korean text, the translation in the user's language, and play the AI-TTS audio "
+        "on demand. Sort options: `recent` (default, saved_at desc), `most_incorrect` "
+        "(incorrect_count desc), `longest_not_reviewed` (last_reviewed_at asc, null first)."
+    ),
+)
 def list_bookmarks(
+    sort: SavedSentenceSort = Query("recent"),
     cursor: str | None = None,
     limit: int = Query(20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
