@@ -83,7 +83,12 @@
 - UI 언어 코드: `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `vi`, `th`, `id`.
 - 전화번호는 E.164 형식.
 
-### 3.5 비기능 요구사항
+### 3.5 메타 엔드포인트
+
+- `GET /health` — 인증 불필요. `{"status": "ok"}`를 반환하는 liveness probe. 로드 밸런서 및 모니터링 용도.
+- `GET /openapi.json`과 `GET /docs`(Swagger UI)는 FastAPI가 제공하며 인증이 필요 없다.
+
+### 3.6 비기능 요구사항
 
 | 항목 | 목표치 |
 |---|---|
@@ -263,9 +268,9 @@
 | `GET /learning/calendar?from=&to=` | 일일 학습 캘린더 |
 | `GET /learning/stats?range=week\|month\|year\|all` | 차트용 집계 통계 |
 | `GET /lectures?track_id=&level=` | 특정 (트랙, 레벨)의 강의 목록 — 주로 TOPIK 보조 콘텐츠 |
-| `GET /lectures/{id}` | 강의 상세 |
-| `GET /lectures/{id}/video` | 서명된 영상 URL (HLS, TTL ≤ 1시간) |
-| `POST /lectures/{id}/progress` | 재생 하트비트 및 완료 신호 |
+| `GET /lectures/{lecture_id}` | 강의 상세 |
+| `GET /lectures/{lecture_id}/video` | 서명된 영상 URL (HLS, TTL ≤ 1시간) |
+| `POST /lectures/{lecture_id}/progress` | 재생 하트비트 및 완료 신호 |
 
 **비즈니스 규칙**
 
@@ -289,11 +294,11 @@
 | `GET /sentences?level=&topic=&cursor=` | 학습 피드 — 미지정 시 사용자의 회화 `current_level` 기준 |
 | `GET /sentences/bookmarks` | 북마크한 문장 |
 | `GET /sentences/recently-studied` | 최근 학습 목록 |
-| `GET /sentences/{id}` | 예문·설명 포함 문장 상세 |
-| `POST /sentences/{id}/bookmark` | 북마크 추가 |
-| `DELETE /sentences/{id}/bookmark` | 북마크 해제 |
-| `POST /sentences/{id}/listen` | 오디오 재생 이벤트 기록 |
-| `GET /sentences/{id}/audio` | 서명된 오디오 URL |
+| `GET /sentences/{sentence_id}` | 예문·설명 포함 문장 상세 |
+| `POST /sentences/{sentence_id}/bookmark` | 북마크 추가 |
+| `DELETE /sentences/{sentence_id}/bookmark` | 북마크 해제 |
+| `POST /sentences/{sentence_id}/listen` | 오디오 재생 이벤트 기록 |
+| `GET /sentences/{sentence_id}/audio` | 서명된 오디오 URL |
 
 **비즈니스 규칙**
 
@@ -314,9 +319,9 @@
 |---|---|
 | `GET /quizzes?type=&level=` | 퀴즈 뱅크 |
 | `GET /quizzes/daily` | 오늘의 퀴즈 세트 |
-| `GET /quizzes/{id}` | 단일 문항 |
-| `POST /quizzes/{id}/attempts` | 답안 제출 |
-| `GET /quizzes/{id}/attempts/{attempt_id}` | 과거 풀이 상세 |
+| `GET /quizzes/{quiz_id}` | 단일 문항 |
+| `POST /quizzes/{quiz_id}/attempts` | 답안 제출 |
+| `GET /quizzes/{quiz_id}/attempts/{attempt_id}` | 과거 풀이 상세 |
 | `GET /quizzes/attempts/me` | 내 풀이 이력 |
 
 **비즈니스 규칙**
@@ -324,7 +329,7 @@
 - 풀이 XP: 정답 +10, 오답 0. 5문제 연속 정답 시 보너스 +5.
 - 일일 세트는 (사용자, 날짜) 기준 결정적(deterministic)이며 재요청해도 동일.
 - 해설은 `language` 쿼리 또는 프로필 기본 언어로 현지화.
-- 추천 TOPIK 문제를 틀리면 서버가 (문제 + 사용자의 답 + 정답)으로 시드된 AI 챗 대화를 시작하고, 응답에 `chatbot_conversation_id`를 포함해 반환한다. 클라이언트는 `/ai/conversations/{id}/messages`로 이동해 해설을 이어본다.
+- 추천 TOPIK 문제를 틀리면 서버가 (문제 + 사용자의 답 + 정답)으로 시드된 AI 챗 대화를 시작하고, 응답에 `chatbot_conversation_id`를 포함해 반환한다. 클라이언트는 `/ai/conversations/{conversation_id}/messages`로 이동해 해설을 이어본다.
 - TOPIK 정답 풀이는 학습 모듈의 TOPIK 자동 승급 기준으로 사용된다.
 
 ---
@@ -338,9 +343,9 @@
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /writing/prompts` | 작문 주제 목록 |
-| `POST /writing/prompts/{id}/submissions` | 작문 제출 |
+| `POST /writing/prompts/{prompt_id}/submissions` | 작문 제출 |
 | `GET /writing/submissions/me` | 내 제출 이력 |
-| `GET /writing/submissions/{id}` | 제출물 + AI 피드백 |
+| `GET /writing/submissions/{submission_id}` | 제출물 + AI 피드백 |
 
 **비즈니스 규칙**
 
@@ -359,8 +364,8 @@
 |---|---|
 | `POST /ai/conversations` | 새 대화 시작 |
 | `GET /ai/conversations` | 대화 목록 |
-| `GET /ai/conversations/{id}/messages` | 메시지 기록(페이지네이션) |
-| `POST /ai/conversations/{id}/messages` | 사용자 메시지 전송 및 AI 응답 수신 |
+| `GET /ai/conversations/{conversation_id}/messages` | 메시지 기록(페이지네이션) |
+| `POST /ai/conversations/{conversation_id}/messages` | 사용자 메시지 전송 및 AI 응답 수신 |
 
 **비즈니스 규칙**
 
@@ -445,12 +450,12 @@
 |---|---|
 | `GET /friends` | 내 친구 목록 |
 | `POST /friends` | 친구 요청 전송(코드 또는 user_id) |
-| `DELETE /friends/{user_id}` | 친구 삭제 |
+| `DELETE /friends/{friend_user_id}` | 친구 삭제 |
 | `GET /friends/requests` | 받은 / 보낸 요청 |
-| `POST /friends/requests/{id}/accept` | 수락 |
-| `POST /friends/requests/{id}/decline` | 거절 |
+| `POST /friends/requests/{request_id}/accept` | 수락 |
+| `POST /friends/requests/{request_id}/decline` | 거절 |
 | `GET /feed` | 친구 활동 피드 |
-| `POST /feed/{id}/reactions` | 이모지 반응 |
+| `POST /feed/{feed_id}/reactions` | 이모지 반응 |
 
 **비즈니스 규칙**
 
@@ -469,7 +474,7 @@
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /notifications` | 알림 목록(페이지네이션) |
-| `POST /notifications/{id}/read` | 개별 읽음 처리 |
+| `POST /notifications/{notification_id}/read` | 개별 읽음 처리 |
 | `POST /notifications/read-all` | 모두 읽음 처리 |
 | `GET /notifications/settings` | 현재 알림 환경설정 |
 | `PUT /notifications/settings` | 알림 환경설정 변경 |
@@ -491,7 +496,7 @@
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /announcements` | 목록 |
-| `GET /announcements/{id}` | 상세 |
+| `GET /announcements/{announcement_id}` | 상세 |
 
 **비즈니스 규칙**
 
@@ -509,10 +514,10 @@
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /support/faqs?category=` | FAQ 브라우징 |
-| `GET /support/faqs/{id}` | FAQ 상세 |
+| `GET /support/faqs/{faq_id}` | FAQ 상세 |
 | `POST /support/inquiries` | 문의 접수 |
 | `GET /support/inquiries/me` | 내 문의 목록 |
-| `GET /support/inquiries/{id}` | 단건 문의 및 관리자 답변 |
+| `GET /support/inquiries/{inquiry_id}` | 단건 문의 및 관리자 답변 |
 
 **비즈니스 규칙**
 
@@ -576,6 +581,7 @@
 | `POST /recommendations/sentences` | 회화 트랙 추천 — 문장 반환 (body: `{level?, prompt?, count?}`) |
 | `POST /recommendations/questions` | TOPIK 트랙 추천 — 퀴즈 문제 반환 (body: `{level?, prompt?, count?}`) |
 | `GET /recommendations/history?kind=sentences\|questions&cursor=` | 최근 추천된 항목 (재요청·유사 항목 조회용) |
+| `POST /recommendations` | 초기 스캐폴드와 호환되는 레거시 내부 추천 엔드포인트. 새 클라이언트는 위 sentences / questions 엔드포인트를 사용해야 한다. |
 
 **비즈니스 규칙**
 

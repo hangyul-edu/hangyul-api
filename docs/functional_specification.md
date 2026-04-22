@@ -83,7 +83,12 @@ Default page size 20 (min 1, max 100). Clients should stop when `next_cursor == 
 - UI language codes: `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `vi`, `th`, `id`.
 - Phone numbers are E.164.
 
-### 3.5 Non-functional requirements
+### 3.5 Meta endpoints
+
+- `GET /health` — unauthenticated liveness probe, returns `{"status": "ok"}`. Used by load balancers and uptime monitors.
+- `GET /openapi.json` and `GET /docs` (Swagger UI) are FastAPI-provided and require no auth.
+
+### 3.6 Non-functional requirements
 
 | Concern | Target |
 |---|---|
@@ -263,9 +268,9 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 | `GET /learning/calendar?from=&to=` | Daily study calendar. |
 | `GET /learning/stats?range=week\|month\|year\|all` | Aggregated stats for charts. |
 | `GET /lectures?track_id=&level=` | List lectures for a (track, level). Lectures are a supplemental content type, primarily for TOPIK. |
-| `GET /lectures/{id}` | Lecture detail. |
-| `GET /lectures/{id}/video` | Signed video URL (HLS, TTL ≤ 1 h). |
-| `POST /lectures/{id}/progress` | Playback heartbeat and completion signal. |
+| `GET /lectures/{lecture_id}` | Lecture detail. |
+| `GET /lectures/{lecture_id}/video` | Signed video URL (HLS, TTL ≤ 1 h). |
+| `POST /lectures/{lecture_id}/progress` | Playback heartbeat and completion signal. |
 
 **Business rules**
 
@@ -289,11 +294,11 @@ Sentences are the recommended content type for the Conversation track. The feed 
 | `GET /sentences?level=&topic=&cursor=` | Study feed — defaults to the user's Conversation `current_level`. |
 | `GET /sentences/bookmarks` | Bookmarked sentences |
 | `GET /sentences/recently-studied` | Recency list |
-| `GET /sentences/{id}` | Sentence detail with examples |
-| `POST /sentences/{id}/bookmark` | Add bookmark |
-| `DELETE /sentences/{id}/bookmark` | Remove bookmark |
-| `POST /sentences/{id}/listen` | Audio playback event |
-| `GET /sentences/{id}/audio` | Signed audio URL |
+| `GET /sentences/{sentence_id}` | Sentence detail with examples |
+| `POST /sentences/{sentence_id}/bookmark` | Add bookmark |
+| `DELETE /sentences/{sentence_id}/bookmark` | Remove bookmark |
+| `POST /sentences/{sentence_id}/listen` | Audio playback event |
+| `GET /sentences/{sentence_id}/audio` | Signed audio URL |
 
 **Business rules**
 
@@ -314,9 +319,9 @@ Quizzes are the recommended content type for the TOPIK track. Questions are pull
 |---|---|
 | `GET /quizzes?type=&level=` | Quiz bank |
 | `GET /quizzes/daily` | Today's curated set |
-| `GET /quizzes/{id}` | Single question |
-| `POST /quizzes/{id}/attempts` | Submit answer |
-| `GET /quizzes/{id}/attempts/{attempt_id}` | Past attempt detail |
+| `GET /quizzes/{quiz_id}` | Single question |
+| `POST /quizzes/{quiz_id}/attempts` | Submit answer |
+| `GET /quizzes/{quiz_id}/attempts/{attempt_id}` | Past attempt detail |
 | `GET /quizzes/attempts/me` | My attempt history |
 
 **Business rules**
@@ -324,7 +329,7 @@ Quizzes are the recommended content type for the TOPIK track. Questions are pull
 - Attempt XP: +10 correct, 0 wrong; bonus +5 if streak of 5 correct in a row.
 - Daily set is deterministic per (user, date); safe to re-fetch.
 - Explanations localized by `language` query or profile default.
-- When a recommended TOPIK attempt is incorrect, the server starts an AI-chat conversation seeded with the question + the user's answer + the correct answer, and returns its `chatbot_conversation_id` in the attempt response. The client opens `/ai/conversations/{id}/messages` to continue.
+- When a recommended TOPIK attempt is incorrect, the server starts an AI-chat conversation seeded with the question + the user's answer + the correct answer, and returns its `chatbot_conversation_id` in the attempt response. The client opens `/ai/conversations/{conversation_id}/messages` to continue.
 - Correct TOPIK attempts feed the TOPIK auto-promotion criteria in the learning module.
 
 ---
@@ -338,9 +343,9 @@ Quizzes are the recommended content type for the TOPIK track. Questions are pull
 | Method & Path | Purpose |
 |---|---|
 | `GET /writing/prompts` | Prompt list |
-| `POST /writing/prompts/{id}/submissions` | Submit text |
+| `POST /writing/prompts/{prompt_id}/submissions` | Submit text |
 | `GET /writing/submissions/me` | My past submissions |
-| `GET /writing/submissions/{id}` | Submission + AI feedback |
+| `GET /writing/submissions/{submission_id}` | Submission + AI feedback |
 
 **Business rules**
 
@@ -359,8 +364,8 @@ Quizzes are the recommended content type for the TOPIK track. Questions are pull
 |---|---|
 | `POST /ai/conversations` | Start session |
 | `GET /ai/conversations` | List sessions |
-| `GET /ai/conversations/{id}/messages` | Paged message history |
-| `POST /ai/conversations/{id}/messages` | Send user message, receive assistant reply |
+| `GET /ai/conversations/{conversation_id}/messages` | Paged message history |
+| `POST /ai/conversations/{conversation_id}/messages` | Send user message, receive assistant reply |
 
 **Business rules**
 
@@ -445,12 +450,12 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 |---|---|
 | `GET /friends` | My friends |
 | `POST /friends` | Send request (by code or user_id) |
-| `DELETE /friends/{user_id}` | Remove friend |
+| `DELETE /friends/{friend_user_id}` | Remove friend |
 | `GET /friends/requests` | Incoming & outgoing requests |
-| `POST /friends/requests/{id}/accept` | Accept |
-| `POST /friends/requests/{id}/decline` | Decline |
+| `POST /friends/requests/{request_id}/accept` | Accept |
+| `POST /friends/requests/{request_id}/decline` | Decline |
 | `GET /feed` | Friend activity feed |
-| `POST /feed/{id}/reactions` | React with emoji |
+| `POST /feed/{feed_id}/reactions` | React with emoji |
 
 **Business rules**
 
@@ -469,7 +474,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 | Method & Path | Purpose |
 |---|---|
 | `GET /notifications` | Paginated inbox |
-| `POST /notifications/{id}/read` | Mark one read |
+| `POST /notifications/{notification_id}/read` | Mark one read |
 | `POST /notifications/read-all` | Mark all read |
 | `GET /notifications/settings` | Current preferences |
 | `PUT /notifications/settings` | Update preferences |
@@ -491,7 +496,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 | Method & Path | Purpose |
 |---|---|
 | `GET /announcements` | List |
-| `GET /announcements/{id}` | Detail |
+| `GET /announcements/{announcement_id}` | Detail |
 
 **Business rules**
 
@@ -509,10 +514,10 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 | Method & Path | Purpose |
 |---|---|
 | `GET /support/faqs?category=` | Browsable FAQ |
-| `GET /support/faqs/{id}` | Detail |
+| `GET /support/faqs/{faq_id}` | Detail |
 | `POST /support/inquiries` | Submit inquiry |
 | `GET /support/inquiries/me` | My inquiries |
-| `GET /support/inquiries/{id}` | Single inquiry + admin reply |
+| `GET /support/inquiries/{inquiry_id}` | Single inquiry + admin reply |
 
 **Business rules**
 
@@ -576,6 +581,7 @@ The primary surface for track content. Supports both *default* level-based recom
 | `POST /recommendations/sentences` | Conversation-track recommendation — returns sentences (body: `{level?, prompt?, count?}`) |
 | `POST /recommendations/questions` | TOPIK-track recommendation — returns quiz questions (body: `{level?, prompt?, count?}`) |
 | `GET /recommendations/history?kind=sentences\|questions&cursor=` | Recently recommended items (for "again"/"similar" follow-ups) |
+| `POST /recommendations` | Legacy internal recommender (back-compat with the original scaffold). New clients should use the sentences / questions endpoints above. |
 
 **Business rules**
 
