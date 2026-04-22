@@ -24,6 +24,15 @@ class AppSettings(BaseModel):
             "Useful when the user cannot speak aloud (commute, office, etc.). Defaults to off."
         ),
     )
+    contact_access_granted: bool = Field(
+        default=False,
+        description=(
+            "User's consent to the app reading their phone contacts, captured when the app shows a "
+            "dedicated allow-contacts modal. Required to invite friends from the address book and "
+            "to compare league rankings with phone-book friends. Updated via the dedicated "
+            "PUT /settings/me/contact-access endpoint."
+        ),
+    )
     daily_sentence_goal: DailyItemGoal = Field(
         default=10,
         description=(
@@ -51,3 +60,12 @@ class UpdateAppSettingsRequest(BaseModel):
     exclude_speaking: bool | None = None
     daily_sentence_goal: DailyItemGoal | None = None
     daily_question_goal: DailyItemGoal | None = None
+
+
+class UpdateContactAccessRequest(BaseModel):
+    granted: bool = Field(
+        description=(
+            "Result of the dedicated 'allow contacts' modal. True after the user accepts the OS "
+            "contact-access prompt; false to revoke."
+        ),
+    )
