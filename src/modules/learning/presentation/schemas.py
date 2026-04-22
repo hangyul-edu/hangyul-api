@@ -42,6 +42,15 @@ class MyTrackState(BaseModel):
     kind: TrackKind
     current_level: int = Field(ge=1)
     max_level: int
+    level_progress_ratio: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Progress toward auto-promotion at the current level (0..1). Reset to 0 by any manual "
+            "level change, regardless of direction."
+        ),
+    )
 
 
 class MyLearningState(BaseModel):

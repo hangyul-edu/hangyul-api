@@ -100,7 +100,13 @@ def get_my_learning(user: CurrentUser = Depends(get_current_user)) -> MyLearning
 @me_learning_router.patch(
     "/{track_id}",
     response_model=MyTrackState,
-    summary="Manually update the current level of a track",
+    summary="Manually set the current level of a track (resets promotion progress)",
+    description=(
+        "Set `current_level` to any value in 1..max_level. Direction is unrestricted — users may "
+        "move up or down, including revisiting a previous level (e.g. 1 → 2 → 3 → 2). Any manual "
+        "change resets `level_progress_ratio` to 0 on that track; auto-promotion is re-evaluated "
+        "from scratch at the new level."
+    ),
 )
 def update_current_level(
     track_id: str,
@@ -117,6 +123,7 @@ def update_current_level(
         kind=track.kind,
         current_level=payload.current_level,
         max_level=track.max_level,
+        level_progress_ratio=0.0,
     )
 
 
