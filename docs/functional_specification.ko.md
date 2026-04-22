@@ -65,7 +65,7 @@
 }
 ```
 
-사용 중인 코드: `validation_error`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `internal_error`, `http_<status>`.
+사용 중인 코드: `validation_error`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `subscription_required`(HTTP 402; 비구독 사용자가 무료 할당량을 초과하거나 유료 전용 콘텐츠에 접근할 때 반환), `internal_error`, `http_<status>`.
 
 ### 3.3 페이지네이션
 
@@ -139,6 +139,7 @@
 - 회원가입 시 이용약관 및 개인정보 처리방침 동의 필수.
 - 소셜 계정은 (공급자 + subject) 기준으로 중복 제거.
 - SMS 코드 발송 제한: 전화번호당 시간당 5회. 초과 시 `rate_limited` 반환.
+- 모든 `TokenResponse`(회원가입·로그인·소셜 로그인·토큰 리프레시)는 `MembershipSummary` — `{tier: "free"|"trial"|"premium", is_premium, expires_at}`를 포함한다. 클라이언트는 로그인 즉시 유료/무료 UI를 분기할 수 있으며, 이후에는 `MeResponse.membership`으로 같은 정보를 조회한다. 기능 게이팅은 `is_premium`을 기준으로 판단한다(`trial`도 `true`).
 
 ---
 
@@ -343,6 +344,7 @@
 - 자동 승급은 기준 기반이며 학습 이벤트(퀴즈 풀이, 문장 완료 등)에서 평가된다. 자동 강등은 없다.
 - 사용자는 `current_level`을 **자유롭게 위·아래로** 변경할 수 있으며, 이미 지나온 레벨로 되돌아가는 것도 가능하다(예: `1 → 2 → 3 → 2`). 이때 **해당 트랙의 진행 중인 승급 진행도는 초기화된다** — 새 레벨에서 다시 승급 평가를 받으려면 필요한 학습량을 처음부터 누적해야 한다.
 - 강의는 보조 콘텐츠이며 자동 승급에는 영향을 주지 않는다.
+- 각 `Lecture`는 `access ∈ {"free", "premium"}`을 가진다. 무료 회원도 목록과 메타데이터는 볼 수 있지만, 재생은 `access="free"` 강의에 한한다. 유료 강의에 대해 `GET /lectures/{lecture_id}/video`를 호출하면 비프리미엄 회원에게는 `402 subscription_required`가 반환된다. 프리미엄·체험 회원(`membership.is_premium=true`)은 모든 강의를 재생할 수 있다.
 
 ---
 
@@ -727,6 +729,8 @@
 
 - `level`은 항상 적용된다. 생략 시 서버가 해당 트랙의 `current_level`을 대입한다. 사용자의 현재 레벨과 다른 값을 의도적으로 보내는 경우는 다른 난이도를 미리보기할 때로 한정한다.
 - `prompt`는 선택적 세분화 입력이다. 제공되면 AI가 해당 조건을 만족하는 항목을 생성하되 **항상 `level`을 유지**하며, 생략 시 최근 활동을 신호로 삼아 레벨에 맞는 항목을 생성한다.
+- 멤버십이 AI 생성에 게이트를 건다. 프리미엄·체험 회원(`membership.is_premium=true`)은 일일 한도가 없고 `quota.daily_limit = null`이다. 비구독 회원은 **두 추천 엔드포인트를 합산해 하루 5개로 제한**되며, 각 제공 시 `quota.used_today`가 증가한다. `remaining_today = 0`이 되면 이후 호출은 `402 subscription_required`와 함께 구독 유도용 problem 페이로드를 반환하고, 클라이언트는 구독 안내 UI를 표시한다.
+- 모든 추천 응답에는 `quota` 블록(`daily_limit`, `used_today`, `remaining_today`, `resets_at`)이 포함되므로, 별도 호출 없이 "오늘 X번 남음 — 구독 시 무제한"과 같은 문구를 렌더링할 수 있다.
 - `prompt`는 최대 500자, LLM 전송 전에 모더레이션을 거친다.
 - `count` 기본값 5, 최대 20.
 - `/recommendations/questions` 결과 항목은 §4.8의 `QuizQuestion`과 동일 구조를 사용하며, 풀이는 퀴즈 풀이 엔드포인트로 제출한다.
@@ -792,6 +796,7 @@ current_level N ──설정에서 수동 변경──▶     current_level M   
 | **Current level (현재 레벨)** | 트랙 추천의 난이도. 트랙별 기준 충족 시 자동 승급되고, 설정에서 수동 변경도 가능하다. |
 | **Level auto-promotion (자동 승급)** | 서버가 트랙별 기준을 평가해 `current_level`을 1단계 올리는 이벤트. |
 | **Recommendation (추천)** | AI가 생성한 콘텐츠 — 회화는 문장, TOPIK은 문제. 항상 사용자의 `current_level`을 기반으로 하며, 선택적 `prompt`로 해당 레벨 안에서 요청을 세분화한다. |
+| **Membership (멤버십)** | 로그인과 `/users/me`에 항상 포함되는 구독 상태: `tier ∈ {"free", "trial", "premium"}`, `is_premium`(trial·premium이면 true), `expires_at`. 기능 게이팅은 `is_premium`을 기준으로 판단. |
 | **Lecture (강의)** | 주로 TOPIK의 보조 영상 / 읽기 / 듣기 콘텐츠. 자동 승급에는 영향을 주지 않는다. |
 | **Sentence (문장)** | 오디오와 문법 태그를 갖춘 최소 학습 단위. |
 | **Quiz (퀴즈)** | 객관식 / 빈칸 채우기 / 입력형 / 순서 맞추기 / 듣기. |

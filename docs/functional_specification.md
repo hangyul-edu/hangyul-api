@@ -65,7 +65,7 @@ All 4xx/5xx responses use `application/problem+json`:
 }
 ```
 
-Codes in active use: `validation_error`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `internal_error`, `http_<status>`.
+Codes in active use: `validation_error`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `subscription_required` (HTTP 402; emitted when a non-premium user exceeds the free quota or opens premium-only content), `internal_error`, `http_<status>`.
 
 ### 3.3 Pagination
 
@@ -139,6 +139,7 @@ Each module below maps to a section of the Figma design, a module under `src/mod
 - Terms + privacy must be accepted at signup.
 - Social accounts are deduplicated by provider + subject.
 - SMS code retry: max 5 code sends / hour / phone; exceeded returns `rate_limited`.
+- Every `TokenResponse` (signup, login, social login, token refresh) embeds a `MembershipSummary` — `{tier: "free"|"trial"|"premium", is_premium, expires_at}` — so the client can render gated UI immediately on login without a second round trip. The same summary lives under `MeResponse.membership` for later reads. `is_premium` is the canonical feature-gating flag: true for both `"trial"` and `"premium"`, false for `"free"`.
 
 ---
 
@@ -343,6 +344,7 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 - Auto-promotion is criterion-based, evaluated on learning events (quiz attempts, sentence completions, etc.). There is no automatic demotion.
 - The user can manually change `current_level` in either direction (up or down) at any time, including returning to a level already visited (e.g. `1 → 2 → 3 → 2`). **Any manual change resets the in-flight promotion progress on that track**: the user must re-accumulate activity at the new level to be evaluated for promotion again.
 - Lectures are optional content and do not affect auto-promotion.
+- Each `Lecture` carries `access ∈ {"free", "premium"}`. Free members can list all lectures and see metadata but only play `access="free"` ones. `GET /lectures/{lecture_id}/video` returns `402 subscription_required` for a non-premium caller requesting a `premium` lecture; premium/trial callers (`membership.is_premium=true`) play anything.
 
 ---
 
@@ -727,6 +729,8 @@ If the user submits an empty prompt, the server regenerates at `current_level` w
 
 - `level` is always applied. If `level` is omitted, the server substitutes the caller's `current_level` in the target track; clients should not send a level that differs from the user's current level unless they are intentionally previewing another difficulty.
 - `prompt` is an optional refinement. When present, the AI generates items that satisfy the prompt **while still respecting `level`**; when absent, the AI generates level-appropriate items using recent history as a signal.
+- Membership gates the AI generator. Premium / trial members (`membership.is_premium=true`) have no daily cap — `quota.daily_limit = null`. Non-subscribed members are capped at **5 items per day across both recommendation endpoints combined**; each granted item increments `quota.used_today`. Once `remaining_today = 0`, subsequent calls return `402 subscription_required` with an upsell-ready problem payload, and the client should show the subscription prompt.
+- Every recommendation response carries a `quota` block (`daily_limit`, `used_today`, `remaining_today`, `resets_at`) so the client can render "X more today — upgrade for unlimited" copy without a separate call.
 - `prompt` is capped at 500 chars and moderated before being sent to the LLM.
 - `count` defaults to 5, max 20.
 - Items returned by `/recommendations/questions` use the same `QuizQuestion` shape as §4.8; attempts are submitted through the quiz attempt endpoint.
@@ -792,6 +796,7 @@ Manual changes work in either direction. There is no automatic demotion, but eve
 | **Current level** | The user's chosen difficulty for recommendations in a track. Auto-promotes on criteria; editable from Settings. |
 | **Level auto-promotion** | Server-side event raising `current_level` when per-track criteria are met. |
 | **Recommendation** | AI-generated content — sentences for Conversation, questions for TOPIK. Always grounded in the user's `current_level`; an optional `prompt` refines the request within that level. |
+| **Membership** | Subscription state surfaced on every login + on `/users/me`: `tier ∈ {"free", "trial", "premium"}`, `is_premium` (true for trial or premium), `expires_at`. Feature gating uses `is_premium`. |
 | **Lecture** | Supplemental video / reading / listening unit, primarily for TOPIK; does not affect auto-promotion. |
 | **Sentence** | Smallest studyable item with audio and grammar tags. |
 | **Quiz** | MCQ / fill-blank / typing / ordering / listening. |
