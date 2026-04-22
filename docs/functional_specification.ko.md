@@ -218,24 +218,57 @@
 
 ### 4.4 구독 (`subscriptions`)
 
-**화면:** 대시보드 페이월 · 요금제 비교 ($7.99 / 프로모션 $5.99 / 연 $54) · 결제 확인 · 구매 복원 · 구매 내역.
+**화면:** 대시보드 페이월 · 요금제 비교 ($7.99 / 프로모션 $5.99 월간 / 12개월 일시불 $54) · 결제 확인 · 구매 복원 · 구매 내역.
+
+**요금제 결제 방식**
+
+| `plan_id` | `interval` | `billing_mode` | 의미 |
+|---|---|---|---|
+| `plan_monthly` | `month` | `recurring` | 매월 자동 갱신 구독. 결제 성공 시 `current_period_end`가 다음 달로 이동한다. |
+| `plan_yearly` | `year` | `one_time` | 12개월 일시불 — 자동 갱신 없음. `expires_at` 이후에는 재구매 전까지 이용 불가. |
+
+`SubscriptionPlan`은 `interval`(주기)과 `billing_mode`(자동 갱신 여부)를 모두 전달하므로 클라이언트가 주기만 보고 추측하지 않고 올바른 페이월 문구를 렌더링할 수 있다.
+
+**체험판(Free Trial) 라이프사이클**
+
+모든 사용자에게 첫 구독 시 **7일 무료 체험**이 제공된다. `MySubscription`은 체험판 상태를 전부 노출한다:
+
+| 필드 | 의미 |
+|---|---|
+| `trial_started` | 사용자가 체험판을 한 번이라도 시작했으면 `true`로 래치(리셋되지 않음). |
+| `trial_started_at` | 체험판 시작 시각. 시작한 적 없으면 null. |
+| `trial_expires_at` | `trial_started_at + plan.trial_days`(기본 7일). 체험판이 없으면 null. |
+| `in_trial` | 서버가 계산한 편의 플래그 — `now < trial_expires_at`이면 true. |
+| `status` | 체험 중에는 `"trial"`, 첫 결제 이후 `"active"`로 전이. |
+
+**이용 만료 시각**
+
+`expires_at`은 "이대로 두면 언제 접근이 끝나는지"를 나타내는 기준 필드:
+
+- 체험 중 → `trial_expires_at`과 동일.
+- 월간 자동 갱신 → `current_period_end`(매 결제 시 이동).
+- 12개월 일시불 → 단일 구매 만료일(시작일 + 12개월).
+
+`current_period_start` / `current_period_end`는 월간 요금제의 결제 주기를 나타내며, 12개월 일시불의 경우 각각 시작일과 `expires_at`과 일치할 수 있다.
 
 **엔드포인트**
 
 | 메서드 & 경로 | 용도 |
 |---|---|
-| `GET /subscriptions/plans` | 요금제 목록(프로모션 가격 포함) |
-| `GET /subscriptions/me` | 내 구독 상태 |
-| `POST /subscriptions/checkout` | 결제 세션 생성 (Stripe / Apple / Google) |
-| `POST /subscriptions/cancel` | 현재 주기 종료 시 해지 |
-| `POST /subscriptions/restore` | 구매 복원 (모바일) |
+| `GET /subscriptions/plans` | 요금제 카탈로그(가격, `interval`, `billing_mode`, `trial_days`, 프로모션 가격 포함) |
+| `GET /subscriptions/me` | 내 구독·체험·만료 상태 전체 |
+| `POST /subscriptions/checkout` | 결제 세션 생성(Stripe / Apple / Google); 조건 충족 시 7일 체험 시작 |
+| `POST /subscriptions/cancel` | 해지 — `current_period_end`와 `expires_at`을 반환해 "OO일까지 이용 가능" UI에 사용 |
+| `POST /subscriptions/restore` | 구매 복원(모바일) |
 | `GET /subscriptions/purchases` | 구매 내역 |
 
 **비즈니스 규칙**
 
-- 체험판: 월간 요금제 최초 결제 시 7일 제공(사용자당 1회).
-- 주기 말 해지 → `current_period_end`까지 이용 유지.
-- Apple / Google 결제는 영수증으로 서버 검증, Stripe는 웹훅으로 검증 (명세 범위 외이나 소비자 API는 고정).
+- 7일 체험은 사용자당 1회(최초 가입 시)만 제공된다. `trial_started=true`가 되면 이후 어떤 요금제로도 재체험이 불가능하다.
+- 월간 요금제: `billing_mode="recurring"`. 해지 시 `cancel_at_period_end=true`로 표시되고 `current_period_end`까지 이용 유지.
+- 12개월 요금제: `billing_mode="one_time"`. 자동 갱신이 없으므로 해지에 결제상 효과는 없지만, UI 일관성을 위해 해지 동작은 동일하게 제공할 수 있다.
+- Apple / Google 결제는 영수증으로 서버 검증, Stripe는 웹훅으로 검증. 어느 공급자든 `MySubscription` 응답 구조는 동일하다.
+- 클라이언트는 "구독 중인가?"를 판정할 때 단일 필드가 아니라 `status in {"trial", "active"}`와 `expires_at > now`를 함께 본다.
 
 ---
 
@@ -724,9 +757,12 @@ pending ──채점 실패──▶ failed
 ### 5.3 구독
 
 ```
-none → trialing → active → past_due → canceled / expired
-                           │
-                           └── 주기 말 해지 예약 → canceled
+(구독 없음) ──체험판 시작──▶ trial ──첫 결제──▶ active
+                              │
+                              └──trial_expires_at 도달, 미결제──▶ expired
+active ──결제 실패──▶ past_due ──유예 종료──▶ expired
+active ──해지──▶ active (cancel_at_period_end=true) ──current_period_end──▶ canceled
+12개월 일시불: trial → active ──expires_at──▶ expired   (자동 갱신 없음)
 ```
 
 ### 5.4 친구 요청
