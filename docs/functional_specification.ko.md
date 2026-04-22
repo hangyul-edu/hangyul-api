@@ -404,7 +404,7 @@
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /sentences?level=&topic=&cursor=` | 학습 피드 — 미지정 시 사용자의 회화 `current_level` 기준 |
-| `GET /sentences/bookmarks` | 북마크한 문장 |
+| `GET /sentences/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | 저장한 문장 목록. 각 항목에 한국어 + 번역 + `audio`가 포함되므로 리스트 화면에서 바로 표시·재생 가능 |
 | `GET /sentences/recently-studied` | 최근 학습 목록 |
 | `GET /sentences/{sentence_id}` | 예문·설명 포함 문장 상세 |
 | `POST /sentences/{sentence_id}/bookmark` | 북마크 추가 |
@@ -417,6 +417,9 @@
 
 - 문장 `status`는 읽기 시도·노출 신호에 따라 `new → learning → mastered`로 이동.
 - 추천 문장에는 항상 `audio`(AI TTS)가 포함된다. 서명 URL TTL은 15분 이하이며, 클라이언트는 첫 수신 시 파일을 로컬에 캐시하고 재생 버튼은 캐시된 파일을 재사용한다. `expires_at` 이후에는 `GET /sentences/{sentence_id}/audio`로 새 URL을 재발급받는다.
+- **저장 버튼**은 추천 카드와 레슨 중 팝업(§4.6 `conversation_speak`)에서 동일한 동작을 수행하며, 모두 `POST /sentences/{sentence_id}/bookmark`를 호출한다. 저장된 항목은 `GET /sentences/bookmarks`로 한 화면에 모아보며, 각 항목에는 한국어 본문과 사용자 언어 `translation`, 개별 재생이 가능한 `audio`가 포함된다.
+- 모든 `Sentence`는 저장 목록 정렬에 쓰이는 서버 관리 메타데이터 세 필드를 가진다: `saved_at`(저장 시점), `incorrect_count`(speech-attempt 오답 시 증가), `last_reviewed_at`(성공적인 speech-attempt, listen, 저장 목록 재오픈 등 모든 복습 이벤트에서 갱신).
+- `GET /sentences/bookmarks?sort=`는 `recent`(기본, `saved_at` 내림차순), `most_incorrect`(`incorrect_count` 내림차순), `longest_not_reviewed`(`last_reviewed_at` 오름차순, null 우선)을 받는다. 그 외 값은 `422 validation_error`.
 - `POST /sentences/{sentence_id}/speech-attempts`는 최대 2 MB, 15초 이하의 오디오만 허용한다. `audio` 파일이 없으면 `422 validation_error`를 반환한다. 모든 시도는 `attempt_id`로 기록되어 분석 / 자동 승급에 사용된다.
 - 클라이언트 UI는 `correct=true`일 때 파란 정답 메시지를, 그 외에는 빨간 "다시 생각해보고 재시도" 메시지와 재시도 버튼을 렌더링한다.
 

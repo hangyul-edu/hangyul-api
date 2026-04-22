@@ -404,7 +404,7 @@ Two distinct UIs live on the sentence screen:
 | Method & Path | Purpose |
 |---|---|
 | `GET /sentences?level=&topic=&cursor=` | Study feed — defaults to the user's Conversation `current_level`. |
-| `GET /sentences/bookmarks` | Bookmarked sentences |
+| `GET /sentences/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | Saved-sentence list. Every item carries Korean + translation + `audio` so the list screen can render and replay in place. |
 | `GET /sentences/recently-studied` | Recency list |
 | `GET /sentences/{sentence_id}` | Sentence detail with examples |
 | `POST /sentences/{sentence_id}/bookmark` | Add bookmark |
@@ -417,6 +417,9 @@ Two distinct UIs live on the sentence screen:
 
 - Sentence `status` moves `new → learning → mastered` based on speech + exposure signals.
 - Recommended sentences always include `audio` (AI TTS). Audio URLs are signed with a ≤ 15-minute TTL; the client caches the file locally on first fetch and reuses the cached file for replay. After `expires_at`, the client can call `GET /sentences/{sentence_id}/audio` to mint a fresh URL.
+- The **save button** is the same action on a recommendation card and on an in-lesson popup (§4.6 `conversation_speak` modal): both call `POST /sentences/{sentence_id}/bookmark`. Saved items surface on the saved-list screen (`GET /sentences/bookmarks`) with full Korean text, `translation` in the user's language, and `audio` so each item is individually playable.
+- Every `Sentence` carries three server-maintained fields for saved-list sorting: `saved_at` (set on save), `incorrect_count` (incremented on each wrong speech-attempt), and `last_reviewed_at` (updated on any review — successful speech attempt, listen event, or re-open from the saved list).
+- `GET /sentences/bookmarks?sort=` accepts `recent` (default, `saved_at` desc), `most_incorrect` (`incorrect_count` desc), or `longest_not_reviewed` (`last_reviewed_at` asc with nulls first). Unknown values return `422 validation_error`.
 - `POST /sentences/{sentence_id}/speech-attempts` accepts audio up to 2 MB and 15 seconds. Requests without an `audio` file return `422 validation_error`. Each attempt mints an `attempt_id` for analytics / auto-promotion.
 - The client-side UI uses `correct=true` to render a blue confirmation; any `correct=false` variant renders a red "think again" prompt with a retry affordance.
 
