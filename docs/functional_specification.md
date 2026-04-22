@@ -19,11 +19,11 @@ The service combines streak-driven daily sessions, adaptive recommendations, vid
 
 | Goal | Supporting features |
 |---|---|
-| Learn enough Korean for everyday conversation | Conversation track (sentence recommendations), HangulAI chat, listening lessons |
-| Practise TOPIK questions at the right level | TOPIK track (question recommendations), quiz attempts, AI explanations on mistakes |
-| Build a daily habit | Streaks, goals, reminders, push notifications |
-| Stay motivated | League tiers, seasonal rankings, friends feed |
-| Get help | FAQs, 1:1 inquiry, announcements |
+| Speak everyday Korean with confidence | Conversation track — level-based or prompt-driven sentence recommendations (e.g. "sentences for ordering food"), HangulAI chat, audio playback |
+| Practise TOPIK at my level and learn from mistakes | TOPIK track — level-based or prompt-driven question recommendations; AI chatbot automatically explains wrong answers |
+| Study at a difficulty that feels right | Auto-promotion when per-track criteria are met; users can also move `current_level` up or down freely from Settings (progress resets on every manual change) |
+| Keep a weekly rhythm with friends | Streaks, daily goal, reminders, 30-person weekly league (US Eastern, promote / maintain / demote), activity feed |
+| Self-serve help when stuck | FAQs, 1:1 inquiry, in-app announcements |
 
 ---
 
@@ -31,10 +31,11 @@ The service combines streak-driven daily sessions, adaptive recommendations, vid
 
 | Persona | Description | Priority flows |
 |---|---|---|
-| **Beginner Bea** | Studies K-culture, no Korean yet. | Onboarding → recommended Level 1 → streak |
-| **Exam-bound Eun** | Targeting TOPIK 3/4. | TOPIK track, daily quizzes, writing feedback |
-| **Busy Ben** | 10 min/day commuter. | Dashboard goals, audio sentences, reminders |
-| **Social Sora** | Already learning, invited by friend. | Friend code, feed, league rankings |
+| **Beginner Bea** | K-content fan; picking up Korean from scratch. | Onboarding (`purpose=conversation`, `speaking_level=beginner`) → Conversation Lv 1 sentence feed → streak + audio |
+| **Exam-focused Eun** | Working professional targeting TOPIK 3–4. | Onboarding (`purpose=topik`, `topik_target=4`) → TOPIK question recs at her level → AI chat unpacks every wrong answer |
+| **Prompt-driven Paul** | Intermediate learner with situation-specific goals. | `POST /recommendations/sentences` / `/questions` with free-form prompts ("sentences for a job interview", "피동 grammar questions"); bookmarks favorites |
+| **Busy Ben** | 10-minute commuter; wants short, audio-first sessions. | Dashboard daily goal → audio-led sentences → streak protection via freeze tokens |
+| **Competitive Chris** | Motivated by ranks and social pressure. | Weekly 30-person group leaderboard (US Eastern) → top 20 % to promote → friend-feed reactions |
 
 ---
 
