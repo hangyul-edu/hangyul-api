@@ -270,8 +270,9 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 **Business rules**
 
 - Conversation and TOPIK levels are independent — advancing in one never moves the other.
-- Auto-promotion is additive (criterion-based, evaluated on relevant events such as quiz attempts or sentence completions); demotion by time does not happen — only manual step-back via Settings.
-- Lectures remain optional content and are not required for auto-promotion.
+- Auto-promotion is criterion-based, evaluated on learning events (quiz attempts, sentence completions, etc.). There is no automatic demotion.
+- The user can manually change `current_level` in either direction (up or down) at any time, including returning to a level already visited (e.g. `1 → 2 → 3 → 2`). **Any manual change resets the in-flight promotion progress on that track**: the user must re-accumulate activity at the new level to be evaluated for promotion again.
+- Lectures are optional content and do not affect auto-promotion.
 
 ---
 
@@ -554,7 +555,7 @@ Five tiers progress as: **Green → Lime → Yellow → Orange → Golden**. Eac
 
 - Language change is propagated to `users.language` automatically.
 - `daily_goal_minutes` bounded 5–120.
-- Manual level changes delegate to `PATCH /me/learning/{track_id}`. Auto-promotion continues from the new level on the next event.
+- Manual level changes delegate to `PATCH /me/learning/{track_id}`. Users may move up or down freely. Any such change **resets the in-flight promotion progress** on that track, so auto-promotion re-evaluates from scratch at the new level (see 4.6).
 
 ---
 
@@ -621,11 +622,11 @@ pending ──cancel──▶ canceled
 ### 5.5 Track level auto-promotion
 
 ```
-current_level N ──per-track criteria met──▶ current_level N+1 (emits LevelUpEvent)
-current_level N ──manual override from Settings──▶ current_level M (any 1..max)
+current_level N ──per-track criteria met──▶  current_level N+1   (emits LevelUpEvent)
+current_level N ──manual change (Settings)──▶ current_level M    (any 1..max; resets level_progress)
 ```
 
-No automatic demotion — manual step-back only.
+Manual changes work in either direction. There is no automatic demotion, but every manual change — up *or* down — resets the in-flight promotion progress on that track (`level_progress_ratio` returns to 0).
 
 ---
 
