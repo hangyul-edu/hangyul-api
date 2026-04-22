@@ -181,7 +181,22 @@
 
 ### 4.3 온보딩 (`onboarding`)
 
-**화면:** 학습 목적 (회화 / TOPIK) · 회화 수준 · 목표 TOPIK 급수 · 일일 목표 · 푸시 동의.
+**화면 순서:**
+1. 학습 목적 (회화 / TOPIK).
+2. 회화 수준 (5단계 — 아래 참조).
+3. 일일 목표 — 목적이 회화이면 **하루 학습 문장 수**, TOPIK이면 **하루 풀이 문제 수**. 옵션: `5 / 10 / 20 / 30 / 40`.
+4. 목표 TOPIK 급수 (목적이 TOPIK일 때만 표시).
+5. 푸시 알림 동의.
+
+5단계 회화 수준 옵션(`SpeakingLevel` 코드, 표시 순):
+
+| 코드 | 설명 |
+|---|---|
+| `beginner` | 완전 초보 — 아직 한국어를 거의 모름 |
+| `elementary` | 단어 몇 개 정도 아는 수준 |
+| `intermediate` | 간단한 문장을 말할 수 있음 |
+| `advanced` | 일상 대화는 할 수 있음 |
+| `fluent` | 유창함 |
 
 **엔드포인트**
 
@@ -197,7 +212,7 @@
   - `conversation`: `speaking_level` 응답이 회화 트랙의 초기 `current_level`을 설정한다.
   - `topik`: `topik_target` 응답이 TOPIK 트랙의 초기 `current_level`(1..6, 급수 기준)을 설정한다.
 - 두 트랙 모두 모든 사용자에게 존재하며, `purpose`는 기본으로 열리는 트랙을 결정할 뿐이다. 레벨은 설정 화면에서 직접 변경할 수 있고, 시간이 지나면서 자동 승급된다(4.6 참조).
-- 일일 목표 기본값은 10분, 허용 범위는 5–120분.
+- 온보딩에서 묻는 일일 목표는 `purpose`에 따라 하나만 채운다 — 회화이면 `daily_sentence_goal`, TOPIK이면 `daily_question_goal`. 선택하지 않은 반대 쪽 목표는 10으로 시작하고 이후 설정(§4.17)에서 조정한다. 허용 값은 `5 / 10 / 20 / 30 / 40`이며, 그 외 값은 `422 validation_error`.
 
 ---
 
@@ -237,10 +252,11 @@
 
 **비즈니스 규칙**
 
-- `today_minutes_goal`(기본 10분)을 달성하면 `streak_days`가 증가.
+- `streak_days`는 사용자가 일일 목표 중 하나(`daily_sentence_goal` 또는 `daily_question_goal`)라도 달성한 날마다 증가한다.
 - `freeze_tokens`(0 이상)는 하루를 빼먹어도 연속 학습일수를 보호.
 - 다음 레슨이 구독 필요 콘텐츠일 때 `paywall_required=true`.
-- `goals[]`는 설정(§4.17)에서 지정한 일일 목표별 진행도를 담는다: `daily_minutes`(unit=minutes), `daily_sentences`(unit=count, `track_id=trk_conversation`), `daily_questions`(unit=count, `track_id=trk_topik`). 각 항목의 `target`과 `current`로 링/프로그레스바를 그린다. 카운터는 사용자의 로컬 일자 경계에서 초기화된다.
+- `goals[]`는 설정(§4.17)에서 지정한 항목 개수 목표 두 개의 진행도를 담는다: `daily_sentences`(`track_id=trk_conversation`), `daily_questions`(`track_id=trk_topik`). 각 항목은 `current`, `target`(5/10/20/30/40 중 하나), `achieved`를 포함하며, 클라이언트는 이를 바탕으로 링/프로그레스바와 마일스톤 달성 표시를 그린다. 카운터는 사용자의 로컬 일자 경계에서 초기화된다.
+- `today_minutes`는 표시 전용이다 — 학습 시간은 **목표 대상이 아니다**.
 
 ---
 
@@ -622,19 +638,20 @@
 
 ### 4.17 앱 설정 (`settings`)
 
-**화면:** 언어 · 테마 · 오디오 · 진동 · 로마자 표기 · 일일 목표(시간 + 회화 문장 수 + TOPIK 문제 수) · 활성 트랙 · 트랙별 현재 레벨.
+**화면:** 언어 · 테마 · 오디오 · 진동 · 로마자 표기 · 일일 목표(회화 문장 수 + TOPIK 문제 수) · 활성 트랙 · 트랙별 현재 레벨.
 
 **일일 목표**
 
-`AppSettings`에 세 개의 독립 카운터가 있다:
+`AppSettings`에는 항목 개수 단위의 일일 목표 두 개가 있다. 각각 **5 / 10 / 20 / 30 / 40** 중 하나를 선택하며, 기본값은 10이다. 사용자가 목표 이상으로 학습하는 것은 언제나 가능하고 실제 수행량은 그대로 기록되지만, 목표 **달성 여부**는 이 마일스톤 기준으로만 판정한다.
 
-| 필드 | 범위 | 한계 | 기본값 |
+| 필드 | 범위 | 허용 값 | 기본값 |
 |---|---|---|---|
-| `daily_goal_minutes` | 전체 활동 | 5–120 | 10 |
-| `daily_sentence_goal` | 회화 트랙 — 학습한 문장 수 | 1–200 | 10 |
-| `daily_question_goal` | TOPIK 트랙 — 풀이한 문제 수 | 1–200 | 10 |
+| `daily_sentence_goal` | 회화 트랙 — 오늘 학습한 문장 수 | `5 \| 10 \| 20 \| 30 \| 40` | 10 |
+| `daily_question_goal` | TOPIK 트랙 — 오늘 풀이한 문제 수 | `5 \| 10 \| 20 \| 30 \| 40` | 10 |
 
-사용자는 세 목표 모두의 진행도를 `GET /dashboard/summary`(4.5 참조)에서 확인한다. 응답의 `goals[]`에는 각 항목의 `current`와 `target`이 들어 있고, 트랙별 목표에는 해당 `track_id`가 태깅된다.
+학습 시간은 **목표 대상이 아니다**. 대시보드의 `today_minutes`는 단순 표시용이다(4.5 참조).
+
+사용자는 `GET /dashboard/summary`에서 진행도를 확인한다. `goals[]`는 `current`, `target`, `achieved`, 해당 `track_id`를 포함한다.
 
 **엔드포인트**
 
@@ -648,7 +665,8 @@
 **비즈니스 규칙**
 
 - 언어 변경은 `users.language`에 자동 반영.
-- `daily_goal_minutes` 범위는 5–120분. `daily_sentence_goal`, `daily_question_goal` 범위는 1–200. 범위를 벗어나면 `422 validation_error`.
+- `daily_sentence_goal`, `daily_question_goal`은 `5 / 10 / 20 / 30 / 40` 중 하나여야 한다. 그 외 값은 `422 validation_error`.
+- `achieved=true`는 `current >= target`일 때 래치되며, 이후 같은 날에 재조회해도 다시 false로 돌아가지 않는다.
 - 레벨 수동 변경은 `PATCH /me/learning/{track_id}`로 위임된다. 사용자는 자유롭게 위·아래로 변경할 수 있으며, 변경 시 **해당 트랙의 진행 중인 승급 진행도가 초기화**되어 자동 승급이 새 레벨에서 처음부터 재평가된다(4.6 참조).
 
 ---
