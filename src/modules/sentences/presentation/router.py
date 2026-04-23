@@ -20,7 +20,7 @@ from src.modules.sentences.presentation.schemas import (
     SavedSentenceViewResponse,
     SavedSentencesPage,
     Sentence,
-    SentenceAudio,
+    SentenceAudioMeta,
     SentencePage,
     SpeechAttemptResponse,
     WrongAnswerRequest,
@@ -31,14 +31,9 @@ router = APIRouter(prefix="/sentences", tags=["sentences"])
 saved_sentences_router = APIRouter(prefix="/saved-sentences", tags=["sentences"])
 
 
-def _stub_audio(sentence_id: str) -> SentenceAudio:
-    return SentenceAudio(
-        url=f"https://cdn.example.com/audio/{sentence_id}.mp3?token=...",
-        format="mp3",
-        duration_ms=2400,
-        voice="ko-KR-ai-warm",
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
-    )
+def _stub_audio_meta() -> SentenceAudioMeta:
+    """Metadata-only audio descriptor — no URL. Clients call GET /sentences/{id}/audio on tap."""
+    return SentenceAudioMeta(format="mp3", duration_ms=2400, voice="ko-KR-ai-warm")
 
 
 @router.get("", response_model=SentencePage, summary="List sentences for study (Conversation track)")
@@ -63,7 +58,11 @@ def list_recent(
     return SentencePage(items=[], next_cursor=None, has_more=False)
 
 
-@router.get("/{sentence_id}", response_model=Sentence, summary="Get sentence detail (includes AI-TTS audio)")
+@router.get(
+    "/{sentence_id}",
+    response_model=Sentence,
+    summary="Get sentence detail (audio metadata only — URL resolved on tap)",
+)
 def get_sentence(sentence_id: str, user: CurrentUser = Depends(get_current_user)) -> Sentence:
     return Sentence(
         sentence_id=sentence_id,
@@ -73,7 +72,7 @@ def get_sentence(sentence_id: str, user: CurrentUser = Depends(get_current_user)
         translation_language="en",
         level=3,
         grammar_points=["덕분에"],
-        audio=_stub_audio(sentence_id),
+        audio=_stub_audio_meta(),
     )
 
 
@@ -123,10 +122,24 @@ def report_listen(
 @router.get(
     "/{sentence_id}/audio",
     response_model=AudioUrlResponse,
-    summary="Refresh the signed audio URL (e.g. after the cached one expired)",
+    summary="Resolve the playable audio URL (called on tap — this is the only endpoint that returns it)",
+    description=(
+        "Mints a signed, short-lived CDN URL for the sentence's AI-TTS audio. Per the global "
+        "audio-delivery policy (§3), no other response carries an audio URL — this endpoint is "
+        "the single resolution point and is keyed by the canonical `sentence_id` (sentences reused "
+        "across features share one audio asset). Clients call it on tap, cache the downloaded "
+        "file locally, and only re-hit the endpoint when the cached file or URL has expired."
+    ),
 )
 def get_audio_url(sentence_id: str, user: CurrentUser = Depends(get_current_user)) -> AudioUrlResponse:
-    return AudioUrlResponse(sentence_id=sentence_id, audio=_stub_audio(sentence_id))
+    return AudioUrlResponse(
+        sentence_id=sentence_id,
+        url=f"https://cdn.example.com/audio/{sentence_id}.mp3?token=...",
+        format="mp3",
+        duration_ms=2400,
+        voice="ko-KR-ai-warm",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+    )
 
 
 @router.post(
@@ -199,7 +212,6 @@ def _stub_saved_row(
         created_at=now - timedelta(days=3),
         updated_at=now,
         has_audio=True,
-        audio_id=f"aud_{sentence_id}",
     )
 
 
@@ -248,12 +260,14 @@ def list_saved_sentences(
 @saved_sentences_router.get(
     "/{sentence_id}",
     response_model=SavedSentenceDetail,
-    summary="Saved-sentence detail (includes full Sentence + signed audio URL)",
+    summary="Saved-sentence detail (full Sentence + audio metadata only; URL resolved on tap)",
     description=(
         "Detail payload for the practice screen the user lands on after tapping a row. Includes "
-        "the hydrated `Sentence` with `audio`, grammar points, examples, blanks, and per-user "
-        "history, plus the forward-compatible `tags`, `folder_id`, `priority`, `last_studied_at`, "
-        "`sr_due_at`, and `review_count` fields. Fetching this endpoint does **not** count as a "
+        "the hydrated `Sentence` with audio **metadata** (format / duration / voice — no URL), "
+        "grammar points, examples, blanks, and per-user history, plus the forward-compatible "
+        "`tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, and `review_count` "
+        "fields. Clients fetch the playable audio URL on tap via "
+        "GET /sentences/{sentence_id}/audio. Fetching this endpoint does **not** count as a "
         "view — call POST /saved-sentences/{id}/view explicitly when the user opens a row."
     ),
 )
@@ -269,7 +283,7 @@ def get_saved_sentence(
         translation_language=row.translation_language,
         level=row.level,
         grammar_points=["덕분에"],
-        audio=_stub_audio(sentence_id),
+        audio=_stub_audio_meta(),
         bookmarked=row.is_favorited,
         saved_at=row.created_at,
         incorrect_count=row.wrong_count,

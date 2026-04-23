@@ -11,6 +11,7 @@ from src.modules.quizzes.presentation.schemas import (
     QuizAttemptRequest,
     QuizAttemptResponse,
     QuizAttemptsResponse,
+    QuizAudioPlayback,
     QuizBookmarkResponse,
     QuizDailySetResponse,
     QuizListResponse,
@@ -86,6 +87,28 @@ def bookmark_quiz(
 )
 def unbookmark_quiz(quiz_id: str, user: CurrentUser = Depends(get_current_user)) -> None:
     return None
+
+
+@router.get(
+    "/{quiz_id}/audio",
+    response_model=QuizAudioPlayback,
+    summary="Resolve the playable listening-audio URL for a quiz (called on tap)",
+    description=(
+        "Sole resolution point for listening-quiz audio, mirroring GET /sentences/{id}/audio. "
+        "Keyed by `quiz_id` — no separate audio_id. Per the global audio-delivery policy (§3), "
+        "no other response carries the playable URL; clients call this on tap and cache the file."
+    ),
+)
+def get_quiz_audio(quiz_id: str, user: CurrentUser = Depends(get_current_user)) -> QuizAudioPlayback:
+    from datetime import timedelta
+
+    return QuizAudioPlayback(
+        quiz_id=quiz_id,
+        url=f"https://cdn.example.com/quiz-audio/{quiz_id}.mp3?token=...",
+        format="mp3",
+        duration_ms=8000,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+    )
 
 
 @router.get("/{quiz_id}", response_model=QuizQuestion, summary="Get a specific quiz question")

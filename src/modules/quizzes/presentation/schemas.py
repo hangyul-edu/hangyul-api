@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from src.common.api.progress import DailyProgress
+from src.modules.sentences.presentation.schemas import AudioFormat
 
 QuizType = Literal["multiple_choice", "fill_blank", "typing", "ordering", "listening"]
 SavedQuizSort = Literal["recent", "most_incorrect", "longest_not_reviewed"]
@@ -16,12 +17,35 @@ class QuizChoice(BaseModel):
     text: str
 
 
+class QuizAudioPlayback(BaseModel):
+    """Playable quiz-audio response — returned ONLY by `GET /quizzes/{quiz_id}/audio`.
+
+    Same single-resolution-point pattern as `SentenceAudioPlayback`. Keyed by the
+    quiz's own `quiz_id` — no separate audio_id.
+    """
+
+    quiz_id: str
+    url: str = Field(
+        description="Signed, short-lived CDN URL for the listening-quiz audio. Cached locally after first fetch."
+    )
+    format: AudioFormat = "mp3"
+    duration_ms: int = Field(ge=0)
+    expires_at: datetime
+
+
 class QuizQuestion(BaseModel):
     quiz_id: str
     type: QuizType
     prompt: str
     prompt_translation: str | None = None
-    audio_url: str | None = None
+    has_listening_audio: bool = Field(
+        default=False,
+        description=(
+            "True when a listening-audio asset exists (e.g. TOPIK listening questions). The URL "
+            "is not embedded — clients call GET /quizzes/{quiz_id}/audio on tap, keyed by the same "
+            "`quiz_id`. Per the global audio-delivery policy (§3)."
+        ),
+    )
     choices: list[QuizChoice] = Field(default_factory=list)
     hint: str | None = None
     level: int = Field(ge=1, le=10)

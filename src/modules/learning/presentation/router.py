@@ -483,11 +483,10 @@ def play_lecture(
 ) -> LecturePlayResponse:
     from datetime import timedelta
     from src.modules.quizzes.presentation.schemas import QuizChoice, QuizQuestion
-    from src.modules.sentences.presentation.schemas import Sentence, SentenceAudio
+    from src.modules.sentences.presentation.schemas import Sentence, SentenceAudioMeta
 
     lecture = get_lecture(lecture_id, user)
     video_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
-    audio_expiry = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     resolved: list[LecturePopupResolved] = []
     for p in lecture.popups:
@@ -504,11 +503,9 @@ def play_lecture(
                         translation="Hello.",
                         translation_language="en",
                         level=lecture.level,
-                        audio=SentenceAudio(
-                            url=f"https://cdn.example.com/audio/{p.sentence_id}.mp3?token=...",
-                            duration_ms=1800,
-                            expires_at=audio_expiry,
-                        ),
+                        # Metadata only — client resolves the URL on tap via
+                        # GET /sentences/{sentence_id}/audio keyed by p.sentence_id.
+                        audio=SentenceAudioMeta(duration_ms=1800),
                     ),
                 )
             )

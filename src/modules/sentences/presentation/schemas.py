@@ -28,7 +28,6 @@ class SentenceExample(BaseModel):
     korean: str
     romanization: str | None = None
     translation: str
-    audio_url: str | None = None
 
 
 class SentenceBlank(BaseModel):
@@ -40,16 +39,38 @@ class SentenceBlank(BaseModel):
     length: int | None = Field(default=None, description="Length of the blank's placeholder in `display_text`.")
 
 
-class SentenceAudio(BaseModel):
+class SentenceAudioMeta(BaseModel):
+    """Lightweight audio metadata — embedded in normal responses.
+
+    Intentionally carries **no URL and no expiry**. Clients resolve the playable
+    URL on tap via `GET /sentences/{sentence_id}/audio`, keyed by the sentence's
+    own id (no separate audio_id — sentences reused across features share a
+    single audio asset). See §3 "Audio delivery" in the functional spec.
+    """
+
+    format: AudioFormat = "mp3"
+    duration_ms: int = Field(ge=0, description="Playback length — useful for UI progress bars before the file is fetched.")
+    voice: str | None = Field(default=None, description="Optional TTS voice identifier.")
+
+
+class SentenceAudioPlayback(BaseModel):
+    """Playable audio response — returned ONLY by `GET /sentences/{sentence_id}/audio`.
+
+    This is the one shape that carries a signed, short-lived URL. Every other
+    response that mentions audio uses `SentenceAudioMeta` (metadata only).
+    """
+
+    sentence_id: str = Field(description="The sentence this URL plays. Same key used everywhere else.")
     url: str = Field(
         description=(
-            "Signed, short-lived CDN URL for AI-generated TTS of the full sentence. "
-            "Clients should cache the file locally and reuse it for the replay button."
+            "Signed, short-lived CDN URL for AI-generated TTS of the full sentence. Clients cache "
+            "the downloaded file locally and reuse it for replay; they only re-hit this endpoint "
+            "when the cached file or URL has expired."
         )
     )
     format: AudioFormat = "mp3"
     duration_ms: int = Field(ge=0)
-    voice: str | None = Field(default=None, description="Optional TTS voice identifier.")
+    voice: str | None = None
     expires_at: datetime
 
 
@@ -76,11 +97,14 @@ class Sentence(BaseModel):
     )
     topic: str | None = None
     level: int = Field(ge=1, le=10)
-    audio: SentenceAudio | None = Field(
+    audio: SentenceAudioMeta | None = Field(
         default=None,
         description=(
-            "AI-generated pronunciation of the full sentence. "
-            "Always populated on items returned by /recommendations/sentences; optional elsewhere."
+            "Metadata-only descriptor of the AI-generated pronunciation audio — `format`, "
+            "`duration_ms`, `voice`. Non-null whenever a playable asset exists. The playable URL "
+            "is NOT included here; the client fetches it on tap via "
+            "GET /sentences/{sentence_id}/audio. Always populated on items returned by "
+            "/recommendations/sentences; null elsewhere only when no audio exists."
         ),
     )
     grammar_points: list[str] = Field(default_factory=list)
@@ -141,9 +165,11 @@ class ListenEventResponse(BaseModel):
     play_count: int
 
 
-class AudioUrlResponse(BaseModel):
-    sentence_id: str
-    audio: SentenceAudio
+class AudioUrlResponse(SentenceAudioPlayback):
+    """Response of `GET /sentences/{sentence_id}/audio` — the sole source of signed audio URLs.
+
+    Flat shape (extends `SentenceAudioPlayback`) so clients don't need to unwrap a nested object.
+    """
 
 
 class SpeechAttemptResponse(BaseModel):
@@ -237,14 +263,11 @@ class SavedSentenceListItem(BaseModel):
     has_audio: bool = Field(
         default=False,
         description=(
-            "True when a TTS audio asset exists for this sentence. The list omits the signed URL to "
-            "stay lightweight; fetch it via GET /saved-sentences/{id} or GET /sentences/{id}/audio "
-            "when playback is needed."
+            "True when a TTS audio asset exists for this sentence. The list never carries a URL; "
+            "the client resolves it on tap via GET /sentences/{sentence_id}/audio, keyed by the "
+            "same `sentence_id` shown on this row. No separate audio_id is used — sentences reused "
+            "across features share one audio asset under their canonical sentence id."
         ),
-    )
-    audio_id: str | None = Field(
-        default=None,
-        description="Stable audio resource id — opaque handle the client can re-use across URL refreshes.",
     )
 
 

@@ -269,8 +269,10 @@ class LecturePopupResolved(BaseModel):
         default=None,
         description=(
             "Present iff kind == 'conversation_speak'. Full Sentence payload: Korean text, "
-            "display_text with blanks, translation in the caller's language, and the TTS audio — "
-            "everything the modal needs, no extra fetch."
+            "display_text with blanks, translation in the caller's language, and audio "
+            "**metadata** (format / duration / voice — no URL). Per the global audio-delivery "
+            "policy (§3), the playable URL is fetched on tap via "
+            "GET /sentences/{sentence_id}/audio keyed by this sentence's id."
         ),
     )
     question: QuizQuestion | None = Field(
