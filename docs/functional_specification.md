@@ -457,27 +457,78 @@ Two distinct UIs live on the sentence screen:
 | Method & Path | Purpose |
 |---|---|
 | `GET /sentences?level=&topic=&cursor=` | Study feed — defaults to the user's Conversation `current_level`. |
-| `GET /sentences/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | Saved-sentence list. Every item carries Korean + translation + `audio` so the list screen can render and replay in place. |
 | `GET /sentences/recently-studied` | Recency list |
 | `GET /sentences/{sentence_id}` | Sentence detail with examples |
-| `POST /sentences/{sentence_id}/bookmark` | Save to the saved list — called from both the recommendation card and the in-lesson `conversation_speak` modal |
-| `DELETE /sentences/{sentence_id}/bookmark` | Remove from the saved list. Idempotent `204 No Content`; safe to call on an already-unsaved item |
+| `POST /sentences/{sentence_id}/bookmark` | Favorite a sentence (sets the `favorite` flag on the SavedSentence record — see §4.7.1) |
+| `DELETE /sentences/{sentence_id}/bookmark` | Unfavorite — clears the `favorite` flag. Idempotent `204 No Content`; safe on an already-unsaved item. If `auto_wrong` remains set, the record survives. |
 | `POST /sentences/{sentence_id}/listen` | Audio playback event (analytics + auto-promotion signal) |
 | `GET /sentences/{sentence_id}/audio` | Refresh the signed audio URL (e.g. after `expires_at`); replay normally uses the cached file |
 | `POST /sentences/{sentence_id}/speech-attempts` | Multipart upload of the user's spoken reading; returns correctness, ASR transcription, and pronunciation score |
+
+**Saved sentences endpoints** (dedicated — see §4.7.1 for data-model details):
+
+| Method & Path | Purpose |
+|---|---|
+| `GET /saved-sentences?save_type=&sort=&q=&cursor=&limit=` | Unified saved-sentence list (auto-saved + favorited). Filter, search, sort, paginate. Response carries per-bucket `counts` for the segmented-control badges. |
+| `GET /saved-sentences/{sentence_id}` | Saved-sentence detail — full nested `Sentence` + forward-compatible `tags` / `folder_id` / `priority` / `last_studied_at` / `sr_due_at` / `review_count`. Does **not** count as a view. |
+| `POST /saved-sentences/wrong-answer` | Record a wrong-answer event. Upsert: creates a new `auto_wrong` record or increments the existing record's `wrong_count`. Never duplicates. |
+| `POST /saved-sentences/{sentence_id}/view` | Record that the user opened / reviewed a saved sentence — refreshes `last_viewed_at` so the LRU sort stays accurate. |
+| `DELETE /saved-sentences/{sentence_id}/auto-save` | Clear only the `auto_wrong` flag. Record survives if `favorite` is still set. |
+| `DELETE /saved-sentences/{sentence_id}` | Delete the whole saved record regardless of flags. |
 
 **Business rules**
 
 - Sentence `status` moves `new → learning → mastered` based on speech + exposure signals.
 - Recommended sentences always include `audio` (AI TTS). Audio URLs are signed with a ≤ 15-minute TTL; the client caches the file locally on first fetch and reuses the cached file for replay. After `expires_at`, the client can call `GET /sentences/{sentence_id}/audio` to mint a fresh URL.
-- The **save button** is the same action on a recommendation card and on an in-lesson popup (§4.6 `conversation_speak` modal): both call `POST /sentences/{sentence_id}/bookmark`. Saved items surface on the saved-list screen (`GET /sentences/bookmarks`) with full Korean text, `translation` in the user's language, and `audio` so each item is individually playable.
-- Every `Sentence` carries server-maintained per-user history for saved-list sorting and review UX: `saved_at` (set on save), `attempt_count` (total speech-attempts), `incorrect_count` (wrong speech-attempts — stored even if the user has never succeeded), `ever_answered_correctly` (bool), and `last_reviewed_at` (updated on successful attempts, listen events, or re-opening from the saved list). These stay populated across save → unsave → save cycles.
-- `GET /sentences/bookmarks?sort=` accepts `recent` (default, `saved_at` desc), `most_incorrect` (`incorrect_count` desc), or `longest_not_reviewed` (`last_reviewed_at` asc with nulls first). Unknown values return `422 validation_error`.
-- Removing a sentence from the saved list (`DELETE /sentences/{sentence_id}/bookmark`) clears `saved_at` and drops the item from `GET /sentences/bookmarks`. `incorrect_count` and `last_reviewed_at` are preserved so the history reappears intact if the user saves the same sentence again later. The endpoint is idempotent — calling it on an item that is not currently saved still returns `204`.
+- The **save button** is the same action on a recommendation card and on an in-lesson popup (§4.6 `conversation_speak` modal): both call `POST /sentences/{sentence_id}/bookmark`. That call sets the `favorite` flag on the caller's SavedSentence record (§4.7.1) — one record per (user, sentence); never duplicated regardless of prior auto-save state.
+- Every `Sentence` carries server-maintained per-user history for saved-list sorting and review UX: `saved_at` (set on favorite), `attempt_count` (total speech-attempts), `incorrect_count` (wrong speech-attempts — stored even if the user has never succeeded), `ever_answered_correctly` (bool), and `last_reviewed_at` (updated on successful attempts, listen events, or re-opening from the saved list). These stay populated across favorite → unfavorite → favorite cycles.
 - **Saved-list practice flow.** The play/practice affordance on a saved item does not simply play audio — it navigates the client to the same practice screen used for recommended sentences. The screen renders `display_text` (with blanks when present) and the cached `audio`. When the user taps the mic, the client posts to **the same** `POST /sentences/{sentence_id}/speech-attempts` used in the recommendation flow. The server reuses the full evaluation pipeline (ASR + pronunciation scoring), returns `correct` / `transcription` / `pronunciation_score` / `feedback_code`, and updates every per-user field on the sentence — `attempt_count`, `incorrect_count` (on failure), `ever_answered_correctly` (on first success), `last_attempted_at`, `last_reviewed_at` — as well as the caller's `daily_progress` for `daily_sentence_goal`. No new endpoint is needed.
 - **Daily goal tracking (Conversation).** A correct `POST /sentences/{sentence_id}/speech-attempts` increments the user's `daily_sentence_goal` counter for the day. The attempt response echoes the updated state via the shared `daily_progress` object `{track_id, goal_key, target, current, achieved, resets_at}`; clients update the on-screen `current / target` without a follow-up fetch. Overflow still tracks beyond `target`; `achieved` latches `true` once the milestone is met.
 - `POST /sentences/{sentence_id}/speech-attempts` accepts audio up to 2 MB and 15 seconds. Requests without an `audio` file return `422 validation_error`. Each attempt mints an `attempt_id` for analytics / auto-promotion.
 - The client-side UI uses `correct=true` to render a blue confirmation; any `correct=false` variant renders a red "think again" prompt with a retry affordance.
+
+#### 4.7.1 Saved sentences
+
+The Saved Sentences screen lists every sentence the user has saved, grouped under **one unified record model** that carries a set of save-type flags. Two flags exist today — `auto_wrong` (the system saved the sentence automatically after a wrong answer in a lecture popup or a recommendation practice) and `favorite` (the user manually bookmarked it for later review). A single sentence that was first auto-saved and then manually favorited becomes one record with both flags set. Clearing the last remaining flag deletes the record; otherwise the record survives and is still returned by the list with whatever flags remain.
+
+**Data model**
+
+Each `SavedSentence` carries:
+
+| Field | Meaning |
+|---|---|
+| `sentence_id` | Canonical sentence id — also the record's key for the caller. |
+| `korean`, `translation`, `translation_language`, `level` | Denormalized text fields so the list row renders without fetching the full `Sentence`. |
+| `save_types` | Active flag set — any of `auto_wrong`, `favorite`. At least one is always present. `is_auto_saved` and `is_favorited` are convenience booleans. |
+| `sources` | Where the record accumulated its saves — any of `lecture`, `recommendation`, `quiz_popup`, `manual`. Deduped; `primary_source` is the first one seen. |
+| `wrong_count` | Running total of wrong-answer events recorded against this sentence. Drives the `most_wrong` sort. |
+| `last_viewed_at` | Last time the user opened the saved row. `null` until the first view — that's what makes the `least_recently_viewed` sort surface never-opened items first. |
+| `created_at`, `updated_at` | Record lifecycle timestamps. `updated_at` refreshes on every mutation (new wrong answer, favorite flip, view, field change). |
+| `has_audio`, `audio_id` | List rows stay lightweight — just a flag and a stable audio handle. The signed playback URL lives on the detail endpoint (or `GET /sentences/{id}/audio`). |
+
+The detail payload adds the hydrated `Sentence` (with signed `audio` URL, grammar points, examples, blanks, per-user history) plus forward-compatible fields reserved for future releases: `tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, `review_count`. Clients should tolerate additive fields — the model is designed to grow with review history, folders, and spaced-repetition scheduling without a breaking change.
+
+**List behavior (`GET /saved-sentences`)**
+
+- `save_type` filter: `all` (default), `auto_wrong`, `favorite`. `all` returns every record with any flag set.
+- `sort`:
+  - `latest` (default) → `updated_at desc`. New wrong answers and favorite toggles both bubble the record to the top.
+  - `most_wrong` → `wrong_count desc`, `updated_at` tiebreaker.
+  - `least_recently_viewed` → `last_viewed_at asc` with **nulls first** so never-opened items surface.
+- `q` does a case-insensitive match on Korean and translation (≤ 200 chars).
+- `counts` always reports `{total, auto_wrong, favorite, both}` for the current `q` so the UI renders the tab badges from one round trip.
+- Pagination uses the standard cursor convention (`cursor`, `limit` default 30, max 100).
+
+**Mutations**
+
+- `POST /sentences/{sentence_id}/bookmark` — favorite (sets `favorite`); creates the record with `sources=['manual']` if none exists.
+- `DELETE /sentences/{sentence_id}/bookmark` — unfavorite (clears `favorite`). If `auto_wrong` is still set, the record remains; else it's deleted.
+- `POST /saved-sentences/wrong-answer` — upsert on wrong answer. Body `{sentence_id, source, lecture_id?, quiz_id?, occurred_at?}`. If a record exists, adds `auto_wrong` to `save_types`, appends `source` to `sources` if new, increments `wrong_count`, refreshes `updated_at`. If no record exists, creates one with `save_types=['auto_wrong']`, `sources=[source]`, `wrong_count=1`. Speech-attempt submissions with `correct=false` trigger the same upsert server-side; this endpoint exists for contexts (TOPIK popup that references a sentence, offline sync) where the client surfaces the wrong-answer event separately.
+- `POST /saved-sentences/{sentence_id}/view` — records that the user opened / reviewed the saved row. Writes `last_viewed_at = now` and refreshes `updated_at`. The `GET /saved-sentences/{id}` detail call does **not** count as a view by itself — clients call `/view` explicitly so LRU sort reflects real user engagement, not prefetches.
+- `DELETE /saved-sentences/{sentence_id}/auto-save` — clears only the `auto_wrong` flag. Returns `{record_deleted, save_types}` so the client knows whether the row should disappear from the "all" tab or just from the "auto" tab.
+- `DELETE /saved-sentences/{sentence_id}` — deletes the record outright regardless of flags. Returns `404` if no record exists for the caller + sentence pair.
+
+**Source of `wrong_count` increments.** Both (a) automatic — server-side, when `POST /sentences/{sentence_id}/speech-attempts` returns `correct=false` — and (b) explicit — `POST /saved-sentences/wrong-answer` called by the client. Both paths share the same upsert semantics, so a record can never diverge from the actual wrong-answer history.
 
 ---
 

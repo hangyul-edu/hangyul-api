@@ -457,27 +457,78 @@
 | 메서드 & 경로 | 용도 |
 |---|---|
 | `GET /sentences?level=&topic=&cursor=` | 학습 피드 — 미지정 시 사용자의 회화 `current_level` 기준 |
-| `GET /sentences/bookmarks?sort=recent\|most_incorrect\|longest_not_reviewed&cursor=` | 저장한 문장 목록. 각 항목에 한국어 + 번역 + `audio`가 포함되므로 리스트 화면에서 바로 표시·재생 가능 |
 | `GET /sentences/recently-studied` | 최근 학습 목록 |
 | `GET /sentences/{sentence_id}` | 예문·설명 포함 문장 상세 |
-| `POST /sentences/{sentence_id}/bookmark` | 저장 목록에 추가 — 추천 카드와 레슨 중 `conversation_speak` 모달에서 공유되는 동작 |
-| `DELETE /sentences/{sentence_id}/bookmark` | 저장 목록에서 제거. 멱등 `204 No Content`이며, 이미 해제된 항목에 호출해도 안전 |
+| `POST /sentences/{sentence_id}/bookmark` | 즐겨찾기 등록 — SavedSentence 레코드의 `favorite` 플래그 설정(§4.7.1) |
+| `DELETE /sentences/{sentence_id}/bookmark` | 즐겨찾기 해제 — `favorite` 플래그 제거. 멱등 `204 No Content`이며, `auto_wrong`이 남아 있으면 레코드는 유지됨 |
 | `POST /sentences/{sentence_id}/listen` | 오디오 재생 이벤트 기록(분석 + 자동 승급 신호) |
 | `GET /sentences/{sentence_id}/audio` | 서명된 오디오 URL 재발급(`expires_at` 이후용, 일반 재생은 캐시 사용) |
 | `POST /sentences/{sentence_id}/speech-attempts` | 사용자의 읽기 녹음을 멀티파트 업로드 → 정오 판정·ASR 전사·발음 점수 반환 |
+
+**저장 문장 관련 엔드포인트** (전용 모듈 — 자세한 데이터 모델은 §4.7.1):
+
+| 메서드 & 경로 | 용도 |
+|---|---|
+| `GET /saved-sentences?save_type=&sort=&q=&cursor=&limit=` | 저장 문장 통합 목록(자동 저장 + 즐겨찾기). 필터 / 검색 / 정렬 / 페이지네이션 지원. 응답에 세그먼트 뱃지를 위한 버킷별 `counts` 포함 |
+| `GET /saved-sentences/{sentence_id}` | 저장 문장 상세 — 완전한 중첩 `Sentence`와 확장 대비 필드(`tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, `review_count`) 포함. **조회만으로 "열람" 시각은 갱신되지 않음** |
+| `POST /saved-sentences/wrong-answer` | 오답 이벤트 기록. 기존 레코드가 있으면 `wrong_count` 증가 / 없으면 `auto_wrong` 레코드 생성. 중복 생성되지 않음 |
+| `POST /saved-sentences/{sentence_id}/view` | 사용자가 저장 문장을 열람/복습했음을 기록 — `last_viewed_at` 갱신으로 "가장 오래 안 본 순" 정렬 정확도 유지 |
+| `DELETE /saved-sentences/{sentence_id}/auto-save` | `auto_wrong` 플래그만 제거. `favorite`가 남아 있으면 레코드는 유지 |
+| `DELETE /saved-sentences/{sentence_id}` | 플래그와 무관하게 저장 레코드 자체를 삭제 |
 
 **비즈니스 규칙**
 
 - 문장 `status`는 읽기 시도·노출 신호에 따라 `new → learning → mastered`로 이동.
 - 추천 문장에는 항상 `audio`(AI TTS)가 포함된다. 서명 URL TTL은 15분 이하이며, 클라이언트는 첫 수신 시 파일을 로컬에 캐시하고 재생 버튼은 캐시된 파일을 재사용한다. `expires_at` 이후에는 `GET /sentences/{sentence_id}/audio`로 새 URL을 재발급받는다.
-- **저장 버튼**은 추천 카드와 레슨 중 팝업(§4.6 `conversation_speak`)에서 동일한 동작을 수행하며, 모두 `POST /sentences/{sentence_id}/bookmark`를 호출한다. 저장된 항목은 `GET /sentences/bookmarks`로 한 화면에 모아보며, 각 항목에는 한국어 본문과 사용자 언어 `translation`, 개별 재생이 가능한 `audio`가 포함된다.
-- 모든 `Sentence`는 저장 목록 정렬과 복습 UI에 쓰이는 서버 관리 히스토리를 포함한다: `saved_at`(저장 시점), `attempt_count`(총 speech-attempt 수), `incorrect_count`(오답 speech-attempt 수 — 한 번도 맞추지 못해도 계속 누적), `ever_answered_correctly`(불리언), `last_reviewed_at`(성공적인 speech-attempt·listen·저장 목록 재오픈 시 갱신). 저장 → 해제 → 재저장 사이클에서도 유지된다.
-- `GET /sentences/bookmarks?sort=`는 `recent`(기본, `saved_at` 내림차순), `most_incorrect`(`incorrect_count` 내림차순), `longest_not_reviewed`(`last_reviewed_at` 오름차순, null 우선)을 받는다. 그 외 값은 `422 validation_error`.
-- 저장 목록에서 항목을 제거(`DELETE /sentences/{sentence_id}/bookmark`)하면 `saved_at`이 비워지고 해당 항목은 `GET /sentences/bookmarks`에서 빠진다. `incorrect_count`와 `last_reviewed_at`은 유지되므로 사용자가 같은 문장을 나중에 다시 저장하면 이력이 그대로 이어진다. 엔드포인트는 멱등이며, 이미 저장 상태가 아닌 항목에 호출해도 `204`를 반환한다.
+- **저장 버튼**은 추천 카드와 레슨 중 팝업(§4.6 `conversation_speak`)에서 동일한 동작을 수행하며, 모두 `POST /sentences/{sentence_id}/bookmark`를 호출한다. 이 호출은 (사용자, 문장) 단위 SavedSentence 레코드의 `favorite` 플래그를 설정하며(§4.7.1), 이전 자동 저장 상태와 무관하게 레코드가 중복 생성되지 않는다.
+- 모든 `Sentence`는 저장 목록 정렬과 복습 UI에 쓰이는 서버 관리 히스토리를 포함한다: `saved_at`(즐겨찾기 시점), `attempt_count`(총 speech-attempt 수), `incorrect_count`(오답 speech-attempt 수 — 한 번도 맞추지 못해도 계속 누적), `ever_answered_correctly`(불리언), `last_reviewed_at`(성공적인 speech-attempt·listen·저장 목록 재오픈 시 갱신). 즐겨찾기 → 해제 → 재즐겨찾기 사이클에서도 유지된다.
 - **저장 목록의 재생(연습) 플로우.** 저장 항목의 재생/연습 버튼은 단순 오디오 재생이 아니라 추천 문장 학습에서 사용하는 것과 동일한 연습 화면으로 이동한다. 화면은 `display_text`(빈칸 포함)와 캐시된 `audio`를 보여주고, 사용자가 마이크를 누르면 클라이언트는 **동일한** `POST /sentences/{sentence_id}/speech-attempts`를 호출한다. 서버는 기존 ASR + 발음 평가 파이프라인을 그대로 사용해 `correct` / `transcription` / `pronunciation_score` / `feedback_code`를 반환하고, 해당 문장의 사용자 히스토리(`attempt_count`, 실패 시 `incorrect_count`, 첫 성공 시 `ever_answered_correctly`, `last_attempted_at`, `last_reviewed_at`)와 `daily_sentence_goal`의 `daily_progress`까지 모두 갱신한다. 새로운 엔드포인트는 필요 없다.
 - **일일 목표 추적(회화).** 정답으로 처리된 `POST /sentences/{sentence_id}/speech-attempts`는 사용자의 `daily_sentence_goal` 카운터를 증가시킨다. 풀이 응답에는 갱신된 상태가 공유 `daily_progress` 객체(`{track_id, goal_key, target, current, achieved, resets_at}`)로 실려 오므로 클라이언트는 추가 요청 없이 화면의 `current / target`을 즉시 갱신한다. 초과 학습도 기록되며 `achieved`는 목표 달성 후 `true`로 래치된다.
 - `POST /sentences/{sentence_id}/speech-attempts`는 최대 2 MB, 15초 이하의 오디오만 허용한다. `audio` 파일이 없으면 `422 validation_error`를 반환한다. 모든 시도는 `attempt_id`로 기록되어 분석 / 자동 승급에 사용된다.
 - 클라이언트 UI는 `correct=true`일 때 파란 정답 메시지를, 그 외에는 빨간 "다시 생각해보고 재시도" 메시지와 재시도 버튼을 렌더링한다.
+
+#### 4.7.1 저장 문장 (Saved Sentences)
+
+저장 문장 화면은 사용자가 저장한 모든 문장을 **하나의 통합된 레코드 모델**로 나열한다. 레코드는 저장 타입 플래그 집합을 가진다. 현재 두 가지 플래그가 존재한다 — `auto_wrong`(강의 팝업이나 추천 연습에서 오답이 발생했을 때 시스템이 자동 저장), `favorite`(사용자가 나중에 복습하려고 수동으로 즐겨찾기 지정). 먼저 자동 저장된 문장을 사용자가 다시 즐겨찾기로 등록하면 두 플래그가 모두 설정된 **하나의 레코드**가 된다. 마지막 플래그까지 제거되면 레코드는 삭제되고, 그렇지 않으면 남은 플래그와 함께 레코드가 유지되어 목록에 계속 노출된다.
+
+**데이터 모델**
+
+각 `SavedSentence` 필드 요약:
+
+| 필드 | 의미 |
+|---|---|
+| `sentence_id` | 문장 고유 id — 호출자의 레코드 키도 겸함 |
+| `korean`, `translation`, `translation_language`, `level` | 리스트 행이 전체 `Sentence`를 조회하지 않고도 렌더링할 수 있도록 비정규화된 텍스트 |
+| `save_types` | 활성 플래그 집합 — `auto_wrong`, `favorite` 중 하나 이상. `is_auto_saved`, `is_favorited`는 편의 불리언 |
+| `sources` | 저장 근원 — `lecture`, `recommendation`, `quiz_popup`, `manual` 중 해당되는 값 집합. 중복 제거되며 `primary_source`는 최초 근원 |
+| `wrong_count` | 이 문장에 대한 오답 이벤트 누적 카운트. "오답 순" 정렬 기준 |
+| `last_viewed_at` | 사용자가 저장된 행을 마지막으로 연 시각. 최초에는 `null` — "가장 오래 안 본 순" 정렬이 한 번도 열지 않은 항목을 먼저 노출할 수 있는 근거 |
+| `created_at`, `updated_at` | 레코드 라이프사이클 타임스탬프. 모든 변경(새 오답, 즐겨찾기 토글, 열람, 필드 변경)마다 `updated_at` 갱신 |
+| `has_audio`, `audio_id` | 리스트 행은 가볍게 유지 — 플래그와 안정적인 오디오 핸들만 전달. 서명된 재생 URL은 상세 응답(또는 `GET /sentences/{id}/audio`)에 포함 |
+
+상세 응답은 완전한 `Sentence`(서명된 `audio` URL, 문법 포인트, 예문, 빈칸, 사용자 히스토리 포함)와 함께 향후 릴리스를 위한 확장 필드 `tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, `review_count`를 반환한다. 클라이언트는 추가 필드를 허용하도록 구현해야 한다 — 본 모델은 복습 이력, 폴더, 간격 반복(spaced repetition) 같은 기능을 breaking change 없이 확장 가능하도록 설계되어 있다.
+
+**목록 동작 (`GET /saved-sentences`)**
+
+- `save_type` 필터: `all`(기본), `auto_wrong`, `favorite`. `all`은 어떤 플래그라도 있는 레코드 전체 반환.
+- `sort`:
+  - `latest`(기본) → `updated_at desc`. 새 오답·즐겨찾기 토글 모두 상단으로 끌어올림.
+  - `most_wrong` → `wrong_count desc`, 동률은 `updated_at`.
+  - `least_recently_viewed` → `last_viewed_at asc`, **null 우선**으로 한 번도 열지 않은 항목이 먼저 노출.
+- `q`는 한국어와 번역에 대한 대소문자 무시 검색(≤ 200자).
+- `counts`는 현재 `q` 기준으로 `{total, auto_wrong, favorite, both}`를 항상 반환 — 탭 뱃지를 1회 호출로 렌더링할 수 있게 함.
+- 페이지네이션은 표준 커서 규약(`cursor`, `limit` 기본 30, 최대 100).
+
+**변경 엔드포인트**
+
+- `POST /sentences/{sentence_id}/bookmark` — 즐겨찾기 등록(`favorite` 플래그 ON). 레코드가 없으면 `sources=['manual']`로 신규 생성.
+- `DELETE /sentences/{sentence_id}/bookmark` — 즐겨찾기 해제(`favorite` 플래그 OFF). `auto_wrong`이 남아 있으면 레코드 유지, 아니면 삭제.
+- `POST /saved-sentences/wrong-answer` — 오답 이벤트 upsert. 바디: `{sentence_id, source, lecture_id?, quiz_id?, occurred_at?}`. 레코드가 있으면 `auto_wrong`을 `save_types`에 추가(멱등), 새 `source`가 있으면 `sources`에 추가, `wrong_count` 1 증가, `updated_at` 갱신. 레코드가 없으면 `save_types=['auto_wrong']`, `sources=[source]`, `wrong_count=1`로 신규 생성. `correct=false`로 판정된 speech-attempt 제출 시 서버가 내부적으로 같은 upsert를 실행하므로, 이 엔드포인트는 문장을 참조하는 TOPIK 팝업이나 오프라인 동기화처럼 클라이언트가 따로 오답 이벤트를 올리는 경우를 위한 것.
+- `POST /saved-sentences/{sentence_id}/view` — 사용자가 저장 행을 열람했음을 기록. `last_viewed_at = now`와 `updated_at`을 갱신. `GET /saved-sentences/{id}` 조회 자체는 "열람"으로 집계되지 않음 — 실제 사용자 참여를 정확히 반영하기 위해 클라이언트가 명시적으로 `/view`를 호출.
+- `DELETE /saved-sentences/{sentence_id}/auto-save` — `auto_wrong`만 제거. `{record_deleted, save_types}` 반환으로 클라이언트가 해당 행이 "전체" 탭에서 사라져야 하는지 "자동" 탭에서만 빠져야 하는지 판단.
+- `DELETE /saved-sentences/{sentence_id}` — 플래그 상태와 무관하게 레코드 전체 삭제. (호출자, 문장) 쌍의 레코드가 없으면 `404` 반환.
+
+**`wrong_count` 증가 경로.** (a) 자동 — `POST /sentences/{sentence_id}/speech-attempts`에서 `correct=false`가 나왔을 때 서버 내부에서 증가, (b) 명시적 — 클라이언트가 `POST /saved-sentences/wrong-answer` 호출. 두 경로 모두 동일한 upsert 시맨틱을 공유하므로 레코드가 실제 오답 이력과 괴리되지 않는다.
 
 ---
 
