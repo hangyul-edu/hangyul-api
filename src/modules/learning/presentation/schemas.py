@@ -341,6 +341,104 @@ class CalendarResponse(BaseModel):
     studied_days: int
 
 
+# --- Streak calendar page ------------------------------------------------------
+# Served by GET /learning/streak-calendar. One bundled payload for the
+# "Continuous learning / streak" screen: banner copy, current/best streak,
+# and a pre-built monthly grid with studied/today flags ready to render.
+
+
+StreakMotivationTone = Literal[
+    "resting", "first_day", "building", "on_fire", "milestone"
+]
+
+
+class StreakMotivation(BaseModel):
+    streak_days: int = Field(
+        ge=0,
+        description="Mirrors the top-level current_streak so the banner can be rendered from this block alone.",
+    )
+    tone: StreakMotivationTone = Field(
+        description=(
+            "Drives banner styling: 'resting' = no active streak, 'first_day' = 1, "
+            "'building' = 2..6, 'on_fire' = 7..29, 'milestone' = 30+."
+        ),
+    )
+    message_key: str = Field(
+        description=(
+            "Stable i18n key (e.g. 'streak.banner.building'). Clients that prefer a "
+            "bundled-copy lookup over the server-rendered message can key off this."
+        ),
+    )
+    message: str = Field(
+        description=(
+            "Server-rendered motivational message in the caller's `users.language`. "
+            "Interpolates `streak_days` where applicable — e.g. 'You are shining with "
+            "learning! Keep going for 2 days!'."
+        ),
+    )
+
+
+class StreakCalendarDay(BaseModel):
+    date: date
+    studied: bool = Field(
+        description="True when the user had any recorded activity on this day (sentences, lessons, or minutes > 0)."
+    )
+    goal_achieved: bool = Field(
+        description="True when the user hit at least one configured daily goal on this day (the streak-eligible condition)."
+    )
+    is_today: bool = Field(
+        description="True exactly for the cell representing today in the caller's local timezone."
+    )
+    sentences_learned: int = Field(ge=0, default=0)
+    lessons_completed: int = Field(ge=0, default=0)
+    minutes: int = Field(ge=0, default=0)
+
+
+class StreakCalendarMonth(BaseModel):
+    year: int = Field(ge=1970, le=9999)
+    month: int = Field(ge=1, le=12)
+    first_date: date = Field(description="First day of the month (YYYY-MM-01).")
+    last_date: date = Field(description="Last day of the month (28–31 depending on month).")
+    today: date | None = Field(
+        default=None,
+        description="Set to today's date iff today falls inside this month; otherwise null.",
+    )
+    days: list[StreakCalendarDay] = Field(
+        description=(
+            "One entry per calendar day in the month, in ascending date order. The client "
+            "places each day into a 7-column grid based on its weekday."
+        ),
+    )
+    studied_days: int = Field(
+        ge=0, description="Count of days in this month where `studied == true`."
+    )
+    goal_achieved_days: int = Field(
+        ge=0, description="Count of days in this month where `goal_achieved == true` (streak-eligible)."
+    )
+    prev_month: str = Field(
+        description="Previous month as 'YYYY-MM' — pass to `GET /learning/streak-calendar?year=&month=` for the ‹ arrow."
+    )
+    next_month: str = Field(
+        description="Next month as 'YYYY-MM' — pass to `GET /learning/streak-calendar?year=&month=` for the › arrow."
+    )
+
+
+class StreakCalendarResponse(BaseModel):
+    current_streak: int = Field(
+        ge=0, description="Consecutive days of daily-goal achievement ending on (or closest before) today."
+    )
+    best_streak: int = Field(ge=0, description="All-time best streak length for this user.")
+    last_study_date: date | None = Field(
+        default=None,
+        description="Date of the user's most recent study activity, in their local timezone. Null when the user has never studied.",
+    )
+    freeze_tokens: int = Field(
+        ge=0, default=0, description="Number of streak-freeze tokens the user currently holds."
+    )
+    motivation: StreakMotivation
+    month: StreakCalendarMonth
+
+
 StatsRange = Literal["week", "month", "year", "all"]
 
 

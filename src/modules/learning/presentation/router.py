@@ -33,6 +33,11 @@ from src.modules.learning.presentation.schemas import (
     SpeakPracticeResponse,
     StatsRange,
     StatsResponse,
+    StreakCalendarDay,
+    StreakCalendarMonth,
+    StreakCalendarResponse,
+    StreakMotivation,
+    StreakMotivationTone,
     Track,
     TracksResponse,
     UpdateCurrentLevelRequest,
@@ -253,6 +258,126 @@ def get_calendar(
     user: CurrentUser = Depends(get_current_user),
 ) -> CalendarResponse:
     return CalendarResponse(from_date=from_date, to_date=to_date, days=[], studied_days=0)
+
+
+def _month_bounds(year: int, month: int) -> tuple[date, date]:
+    first = date(year, month, 1)
+    if month == 12:
+        next_first = date(year + 1, 1, 1)
+    else:
+        next_first = date(year, month + 1, 1)
+    last = next_first - timedelta(days=1)
+    return first, last
+
+
+def _shift_month(year: int, month: int, delta: int) -> str:
+    index = year * 12 + (month - 1) + delta
+    new_year, new_month_zero = divmod(index, 12)
+    return f"{new_year:04d}-{new_month_zero + 1:02d}"
+
+
+def _motivation_for(streak_days: int) -> StreakMotivation:
+    tone: StreakMotivationTone
+    key: str
+    message: str
+    if streak_days <= 0:
+        tone = "resting"
+        key = "streak.banner.resting"
+        message = "Your streak is waiting — a short session starts a new one."
+    elif streak_days == 1:
+        tone = "first_day"
+        key = "streak.banner.first_day"
+        message = "Day one — nice start! Come back tomorrow to keep it going."
+    elif streak_days < 7:
+        tone = "building"
+        key = "streak.banner.building"
+        message = f"You are shining with learning! Keep going for {streak_days} days!"
+    elif streak_days < 30:
+        tone = "on_fire"
+        key = "streak.banner.on_fire"
+        message = f"Amazing — {streak_days} days and counting. Keep the rhythm going."
+    else:
+        tone = "milestone"
+        key = "streak.banner.milestone"
+        message = f"{streak_days} days strong. You're making Korean a habit."
+    return StreakMotivation(
+        streak_days=streak_days, tone=tone, message_key=key, message=message
+    )
+
+
+@learning_router.get(
+    "/streak-calendar",
+    response_model=StreakCalendarResponse,
+    summary="Streak calendar page — banner copy + monthly grid",
+    description=(
+        "Bundled payload for the continuous-learning / streak screen. Returns current & best "
+        "streak, a motivational banner rendered in the caller's `users.language`, and a "
+        "pre-built month grid with `studied` / `goal_achieved` / `is_today` flags per day, "
+        "plus `prev_month` / `next_month` strings for the ‹ › arrows. "
+        "`year` and `month` default to the caller's local today."
+    ),
+)
+def get_streak_calendar(
+    year: int | None = Query(
+        default=None,
+        ge=1970,
+        le=9999,
+        description="Calendar year (YYYY). Defaults to today's year in the caller's local timezone.",
+    ),
+    month: int | None = Query(
+        default=None,
+        ge=1,
+        le=12,
+        description="Calendar month (1..12). Defaults to today's month in the caller's local timezone.",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+) -> StreakCalendarResponse:
+    # Real impl uses the user's local timezone for "today"; UTC here is a stand-in.
+    today = datetime.now(timezone.utc).date()
+    if (year is None) ^ (month is None):
+        raise ValidationError("`year` and `month` must be provided together or both omitted.")
+    y = year or today.year
+    m = month or today.month
+
+    first, last = _month_bounds(y, m)
+    days: list[StreakCalendarDay] = []
+    cursor = first
+    while cursor <= last:
+        days.append(
+            StreakCalendarDay(
+                date=cursor,
+                studied=False,
+                goal_achieved=False,
+                is_today=(cursor == today),
+                sentences_learned=0,
+                lessons_completed=0,
+                minutes=0,
+            )
+        )
+        cursor += timedelta(days=1)
+
+    month_block = StreakCalendarMonth(
+        year=y,
+        month=m,
+        first_date=first,
+        last_date=last,
+        today=today if first <= today <= last else None,
+        days=days,
+        studied_days=sum(1 for d in days if d.studied),
+        goal_achieved_days=sum(1 for d in days if d.goal_achieved),
+        prev_month=_shift_month(y, m, -1),
+        next_month=_shift_month(y, m, +1),
+    )
+
+    current_streak = 0
+    return StreakCalendarResponse(
+        current_streak=current_streak,
+        best_streak=0,
+        last_study_date=None,
+        freeze_tokens=0,
+        motivation=_motivation_for(current_streak),
+        month=month_block,
+    )
 
 
 @learning_router.get("/stats", response_model=StatsResponse, summary="Aggregated study stats")
