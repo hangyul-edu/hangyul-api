@@ -84,12 +84,30 @@ Default page size 20 (min 1, max 100). Clients should stop when `next_cursor == 
 - UI language codes: `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `vi`, `th`, `id`.
 - Phone numbers are E.164.
 
-### 3.5 Meta endpoints
+### 3.5 Audio delivery
+
+Global policy — audio files and streaming URLs are **never embedded in normal API responses**. Payloads that mention audio carry only lightweight metadata (`format`, `duration_ms`, `voice` where applicable). The playable URL is minted by a dedicated resolution endpoint that the client calls **on tap**.
+
+| Entity | Inline (all responses) | Resolution endpoint (URL only) |
+|---|---|---|
+| Sentence audio | `Sentence.audio: SentenceAudioMeta \| null` — `{format, duration_ms, voice}`, no URL. Null iff the sentence has no audio asset. | `GET /sentences/{sentence_id}/audio` — returns signed URL + `expires_at` + metadata. |
+| Quiz listening audio | `QuizQuestion.has_listening_audio: bool` — metadata flag only. | `GET /quizzes/{quiz_id}/audio` — returns signed URL + `expires_at` + metadata. |
+| Saved-sentence list rows | `has_audio: bool` — no URL, no audio_id. | Same `GET /sentences/{sentence_id}/audio` keyed by the row's canonical sentence id. |
+
+Rules:
+- **No separate audio_id.** Audio is keyed by the entity's canonical id (`sentence_id`, `quiz_id`). Sentences reused across features (recommendations, lesson popups, saved list, practice screens) share one audio asset under one id.
+- **Clients fetch on tap, cache locally, reuse the cached file** for replays. They only re-hit the resolution endpoint when the cached file has been evicted or the URL's `expires_at` has passed.
+- **Signed URLs are short-lived** (≤ 15 minutes). Every response that does mint a URL carries `expires_at`.
+- Bundled endpoints (e.g. `GET /lectures/{lecture_id}/play`) still inline the *text* payload for zero-stall rendering, but the nested `Sentence.audio` is metadata-only; the modal fetches the URL on the user's first play tap.
+
+This applies platform-wide — recommendation cards, sentence study feeds, saved-sentences list & detail, lesson-popup bundles, quiz questions, and any future audio-bearing entity.
+
+### 3.6 Meta endpoints
 
 - `GET /health` — unauthenticated liveness probe, returns `{"status": "ok"}`. Used by load balancers and uptime monitors.
 - `GET /openapi.json` and `GET /docs` (Swagger UI) are FastAPI-provided and require no auth.
 
-### 3.6 Non-functional requirements
+### 3.7 Non-functional requirements
 
 | Concern | Target |
 |---|---|
@@ -370,7 +388,7 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 - Each popup is owned by exactly one lesson (`Lecture.popups[]`); that owning relationship is stored on the server and is the authoritative source for both the during-playback scheduler and the speak-only practice set. `SpeakPracticeItem.popup_id` on the practice response always maps back to the same `popup_id` the playback scheduler uses.
 - `GET /lectures/{lecture_id}/play` is the recommended entry point for the video player. It bundles:
   - `video` — signed HLS URL, `expires_at`, optional captions, total duration.
-  - `popups` — every modal with its `Sentence` or `QuizQuestion` already resolved inline. For Conversation lessons the sentences carry `korean`, `display_text` (with blanks), the `translation` in the caller's `users.language`, and the TTS `audio`; for TOPIK lessons the questions carry `prompt`, `prompt_translation`, `choices`, and the per-user history fields. Mixed lessons carry both.
+  - `popups` — every modal with its `Sentence` or `QuizQuestion` already resolved inline. For Conversation lessons the sentences carry `korean`, `display_text` (with blanks), the `translation` in the caller's `users.language`, and audio **metadata** (format / duration / voice — no URL, per §3.5); for TOPIK lessons the questions carry `prompt`, `prompt_translation`, `choices`, `has_listening_audio`, and the per-user history fields. Mixed lessons carry both. Modals resolve their audio URL on the user's play tap via `GET /sentences/{sentence_id}/audio` or `GET /quizzes/{quiz_id}/audio`.
   - `my_playback` — the caller's resume offset, so the client seeks before starting playback (smooth resume).
   With this single round trip the player never has to stall mid-video to resolve a popup's content; everything needed for smooth playback arrives up front. `GET /lectures/{lecture_id}/video` remains for the narrow case where only the signed URL needs refreshing after `expires_at`.
 - `POST /lectures/{lecture_id}/progress` carries only `position_seconds` — it is a position heartbeat and never marks completion. The server persists the latest heartbeat per (user, lecture) and surfaces it on subsequent `GET /lectures/{lecture_id}` calls as `my_playback.last_position_seconds` (plus `last_watched_at` and the lecture's `completed` state). Clients seek to this offset on re-entry so the user resumes from where they stopped. Only `POST /lectures/{lecture_id}/complete` flips the completion flag, grants XP, and feeds the TOPIK auto-promotion criteria. Re-calling `/complete` is safe (idempotent): subsequent responses carry `already_completed=true` and `xp_earned=0`.
@@ -423,13 +441,13 @@ A `goal_achieved` day is the streak-eligible condition: hitting at least one con
 
 Sentences are the recommended content type for the Conversation track; every recommendation is **AI-generated at the user's Conversation `current_level`** (see 4.18). Bookmarking, audio, and review-complete events feed the Conversation auto-promotion criteria.
 
-**Each recommended sentence ships with its own AI-generated pronunciation audio.** The response payload includes a nested `audio` object — a signed CDN URL plus format, duration, voice, and an `expires_at`. The client caches the audio file locally; the in-app replay button plays the local file with no extra API call.
+**Each recommended sentence has its own AI-generated pronunciation audio.** The response carries a lightweight `audio` object (`format`, `duration_ms`, `voice`) — **no URL**. Per the global audio-delivery policy (§3.5), the playable URL is minted on demand by `GET /sentences/{sentence_id}/audio`, keyed by the same sentence id. The client calls this on the user's first play tap, caches the file locally, and reuses the cached file for every subsequent replay.
 
 **Each recommended sentence also ships with a translation in the user's selected default language.** Every `Sentence` carries `translation` (the rendered meaning) together with `translation_language` (BCP-47, mirrors `users.language` — e.g. `en`, `ja`, `zh-CN`). When the user updates `users.language`, subsequent recommendations are regenerated in the new language.
 
 **Read-aloud flow**
 
-1. Sentence arrives → client auto-plays `audio` once.
+1. Sentence arrives → client displays text and, on the user's first play tap, fetches the audio URL via `GET /sentences/{sentence_id}/audio`; the downloaded file is cached locally.
 2. (Optional) user taps the replay button → client re-plays the cached file.
 3. User taps the microphone and reads the sentence aloud (including any blanks in `display_text`). The client records audio and uploads it to `POST /sentences/{sentence_id}/speech-attempts`.
 4. Server runs ASR + pronunciation scoring against the reference `korean` text and returns:
@@ -462,7 +480,7 @@ Two distinct UIs live on the sentence screen:
 | `POST /sentences/{sentence_id}/bookmark` | Favorite a sentence (sets the `favorite` flag on the SavedSentence record — see §4.7.1) |
 | `DELETE /sentences/{sentence_id}/bookmark` | Unfavorite — clears the `favorite` flag. Idempotent `204 No Content`; safe on an already-unsaved item. If `auto_wrong` remains set, the record survives. |
 | `POST /sentences/{sentence_id}/listen` | Audio playback event (analytics + auto-promotion signal) |
-| `GET /sentences/{sentence_id}/audio` | Refresh the signed audio URL (e.g. after `expires_at`); replay normally uses the cached file |
+| `GET /sentences/{sentence_id}/audio` | **Sole source of the signed audio URL** (§3.5). Called on the user's first play tap and on TTL expiry; replay normally uses the cached file. |
 | `POST /sentences/{sentence_id}/speech-attempts` | Multipart upload of the user's spoken reading; returns correctness, ASR transcription, and pronunciation score |
 
 **Saved sentences endpoints** (dedicated — see §4.7.1 for data-model details):
@@ -479,7 +497,7 @@ Two distinct UIs live on the sentence screen:
 **Business rules**
 
 - Sentence `status` moves `new → learning → mastered` based on speech + exposure signals.
-- Recommended sentences always include `audio` (AI TTS). Audio URLs are signed with a ≤ 15-minute TTL; the client caches the file locally on first fetch and reuses the cached file for replay. After `expires_at`, the client can call `GET /sentences/{sentence_id}/audio` to mint a fresh URL.
+- Recommended sentences always include an `audio` metadata block (AI TTS) — `{format, duration_ms, voice}` with no URL. The playable URL comes from `GET /sentences/{sentence_id}/audio` (§3.5); signed with a ≤ 15-minute TTL. The client fetches on tap, caches the file locally, and reuses the cached file for replay. When `expires_at` passes (or the file is evicted) the client calls the audio endpoint again.
 - The **save button** is the same action on a recommendation card and on an in-lesson popup (§4.6 `conversation_speak` modal): both call `POST /sentences/{sentence_id}/bookmark`. That call sets the `favorite` flag on the caller's SavedSentence record (§4.7.1) — one record per (user, sentence); never duplicated regardless of prior auto-save state.
 - Every `Sentence` carries server-maintained per-user history for saved-list sorting and review UX: `saved_at` (set on favorite), `attempt_count` (total speech-attempts), `incorrect_count` (wrong speech-attempts — stored even if the user has never succeeded), `ever_answered_correctly` (bool), and `last_reviewed_at` (updated on successful attempts, listen events, or re-opening from the saved list). These stay populated across favorite → unfavorite → favorite cycles.
 - **Saved-list practice flow.** The play/practice affordance on a saved item does not simply play audio — it navigates the client to the same practice screen used for recommended sentences. The screen renders `display_text` (with blanks when present) and the cached `audio`. When the user taps the mic, the client posts to **the same** `POST /sentences/{sentence_id}/speech-attempts` used in the recommendation flow. The server reuses the full evaluation pipeline (ASR + pronunciation scoring), returns `correct` / `transcription` / `pronunciation_score` / `feedback_code`, and updates every per-user field on the sentence — `attempt_count`, `incorrect_count` (on failure), `ever_answered_correctly` (on first success), `last_attempted_at`, `last_reviewed_at` — as well as the caller's `daily_progress` for `daily_sentence_goal`. No new endpoint is needed.
@@ -504,9 +522,9 @@ Each `SavedSentence` carries:
 | `wrong_count` | Running total of wrong-answer events recorded against this sentence. Drives the `most_wrong` sort. |
 | `last_viewed_at` | Last time the user opened the saved row. `null` until the first view — that's what makes the `least_recently_viewed` sort surface never-opened items first. |
 | `created_at`, `updated_at` | Record lifecycle timestamps. `updated_at` refreshes on every mutation (new wrong answer, favorite flip, view, field change). |
-| `has_audio`, `audio_id` | List rows stay lightweight — just a flag and a stable audio handle. The signed playback URL lives on the detail endpoint (or `GET /sentences/{id}/audio`). |
+| `has_audio` | List rows stay lightweight — just a flag. Per §3.5 there is no separate audio_id; the playable URL is resolved on tap via `GET /sentences/{sentence_id}/audio` keyed by the row's canonical sentence id. |
 
-The detail payload adds the hydrated `Sentence` (with signed `audio` URL, grammar points, examples, blanks, per-user history) plus forward-compatible fields reserved for future releases: `tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, `review_count`. Clients should tolerate additive fields — the model is designed to grow with review history, folders, and spaced-repetition scheduling without a breaking change.
+The detail payload adds the hydrated `Sentence` — grammar points, examples, blanks, per-user history, and audio metadata (still no URL, per §3.5) — plus forward-compatible fields reserved for future releases: `tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, `review_count`. Clients should tolerate additive fields — the model is designed to grow with review history, folders, and spaced-repetition scheduling without a breaking change.
 
 **List behavior (`GET /saved-sentences`)**
 
@@ -545,6 +563,7 @@ Quizzes are the recommended content type for the TOPIK track. Every question is 
 | `GET /quizzes?type=&level=` | Quiz bank |
 | `GET /quizzes/daily` | Today's curated set |
 | `GET /quizzes/{quiz_id}` | Single question |
+| `GET /quizzes/{quiz_id}/audio` | Resolve the playable listening-audio URL (§3.5) — called on the user's play tap. Only relevant for listening-type questions (`has_listening_audio=true`). |
 | `POST /quizzes/{quiz_id}/attempts` | Submit answer |
 | `GET /quizzes/{quiz_id}/attempts/{attempt_id}` | Past attempt detail |
 | `GET /quizzes/attempts/me` | My attempt history |
@@ -886,7 +905,7 @@ If the user submits an empty prompt, the server regenerates at `current_level` w
 - `count` defaults to 5, max 20.
 - Items returned by `/recommendations/questions` use the same `QuizQuestion` shape as §4.8; attempts are submitted through the quiz attempt endpoint.
 - Items returned by `/recommendations/sentences` use the same `Sentence` shape as §4.7 and always include:
-  - the nested `audio` object (AI-generated TTS — signed URL, format, duration, `expires_at`); clients cache the file locally for the replay button and only call `GET /sentences/{sentence_id}/audio` to refresh after expiry.
+  - the nested `audio` metadata (AI-generated TTS — `format`, `duration_ms`, `voice`; no URL per §3.5). The playable URL comes from `GET /sentences/{sentence_id}/audio` on the user's first play tap; clients cache the file locally and reuse it for replay.
   - `translation` + `translation_language` in the caller's `users.language`, so the UI can show the Korean line and its meaning side by side without an extra localization call.
 - Bookmarks, listen events, and speech attempts flow through the sentence endpoints.
 

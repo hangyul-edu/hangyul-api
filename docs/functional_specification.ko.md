@@ -84,12 +84,30 @@
 - UI 언어 코드: `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `vi`, `th`, `id`.
 - 전화번호는 E.164 형식.
 
-### 3.5 메타 엔드포인트
+### 3.5 오디오 전달 정책
+
+전역 정책 — 오디오 파일 또는 스트리밍 URL은 **일반 API 응답에 직접 포함하지 않는다**. 오디오를 언급하는 모든 응답은 가벼운 메타데이터(`format`, `duration_ms`, 필요 시 `voice`)만 담는다. 재생 가능한 URL은 사용자가 **재생 버튼을 눌렀을 때** 전용 조회 엔드포인트에서만 발급된다.
+
+| 엔티티 | 응답 내 inline | 조회 엔드포인트 (URL 전용) |
+|---|---|---|
+| 문장 오디오 | `Sentence.audio: SentenceAudioMeta \| null` — `{format, duration_ms, voice}`, URL 없음. 오디오가 없으면 null. | `GET /sentences/{sentence_id}/audio` — 서명된 URL + `expires_at` + 메타데이터 반환 |
+| 퀴즈 듣기 오디오 | `QuizQuestion.has_listening_audio: bool` — 메타데이터 플래그만 | `GET /quizzes/{quiz_id}/audio` — 서명된 URL + `expires_at` + 메타데이터 반환 |
+| 저장 문장 리스트 행 | `has_audio: bool` — URL 없음, audio_id 없음 | 동일한 `GET /sentences/{sentence_id}/audio`를 행의 고유 sentence_id로 호출 |
+
+규칙:
+- **별도 audio_id는 두지 않는다.** 오디오는 엔티티 고유 id(`sentence_id`, `quiz_id`)로 조회한다. 여러 기능(추천, 레슨 팝업, 저장 목록, 연습 화면)에서 재사용되는 문장은 동일한 id 아래 하나의 오디오 자산을 공유한다.
+- **클라이언트는 탭 시점에 URL을 받아오고, 파일을 로컬 캐시한 뒤 재사용한다.** 캐시가 비거나 URL `expires_at`을 넘긴 경우에만 조회 엔드포인트를 다시 호출한다.
+- **서명 URL은 단명(≤ 15분).** URL을 발급하는 응답은 항상 `expires_at`을 포함한다.
+- 번들 엔드포인트(예: `GET /lectures/{lecture_id}/play`)는 UI 지연을 없애기 위해 텍스트 페이로드는 여전히 inline으로 제공하지만, 중첩된 `Sentence.audio`는 메타데이터만 담는다. 모달은 사용자가 처음 재생 버튼을 누를 때 URL을 조회한다.
+
+이 정책은 전역적이며 추천 카드, 문장 학습 피드, 저장 문장 목록·상세, 레슨 팝업 번들, 퀴즈 문제, 이후 추가될 오디오 포함 엔티티 모두에 적용된다.
+
+### 3.6 메타 엔드포인트
 
 - `GET /health` — 인증 불필요. `{"status": "ok"}`를 반환하는 liveness probe. 로드 밸런서 및 모니터링 용도.
 - `GET /openapi.json`과 `GET /docs`(Swagger UI)는 FastAPI가 제공하며 인증이 필요 없다.
 
-### 3.6 비기능 요구사항
+### 3.7 비기능 요구사항
 
 | 항목 | 목표치 |
 |---|---|
@@ -370,7 +388,7 @@
 - 각 팝업은 정확히 하나의 레슨(`Lecture.popups[]`)에 소속된다. 이 관계는 서버에 저장되어 재생 중 팝업 스케줄러와 따라 말하기 전용 연습 세트 양쪽에 동일한 근거 자료로 사용된다. `SpeakPracticeItem.popup_id`는 항상 재생 스케줄러가 사용하는 `popup_id`와 일치한다.
 - 영상 플레이어는 `GET /lectures/{lecture_id}/play`를 기본 진입점으로 사용한다. 응답에는 다음이 함께 담긴다:
   - `video` — 서명된 HLS URL, `expires_at`, 자막 URL(선택), 총 재생 시간.
-  - `popups` — 각 모달에 들어갈 `Sentence` 또는 `QuizQuestion`이 이미 포함된 상태. 회화 레슨이면 문장은 `korean`, `display_text`(빈칸 포함), 사용자의 `users.language`로 번역된 `translation`, TTS `audio`까지 싣고 오며, TOPIK 레슨이면 문제는 `prompt`, `prompt_translation`, `choices`, 사용자 히스토리까지 포함된다. 두 유형이 섞여 있는 레슨도 동일한 구조로 처리된다.
+  - `popups` — 각 모달에 들어갈 `Sentence` 또는 `QuizQuestion`이 이미 포함된 상태. 회화 레슨이면 문장은 `korean`, `display_text`(빈칸 포함), 사용자의 `users.language`로 번역된 `translation`, 그리고 audio **메타데이터**(§3.5 — URL 없음)를 싣고 오며, TOPIK 레슨이면 문제는 `prompt`, `prompt_translation`, `choices`, `has_listening_audio`, 사용자 히스토리까지 포함된다. 두 유형이 섞여 있는 레슨도 동일한 구조로 처리된다. 모달은 사용자가 재생을 누를 때 `GET /sentences/{sentence_id}/audio` 또는 `GET /quizzes/{quiz_id}/audio`로 URL을 받아 재생한다.
   - `my_playback` — 사용자의 이어보기 오프셋. 클라이언트는 재생 시작 전에 이 위치로 시킹한다.
   이 한 번의 호출이면 재생 중 팝업 콘텐츠 때문에 잠깐 멈추는 일이 생기지 않는다. `GET /lectures/{lecture_id}/video`는 `expires_at` 이후 서명 URL만 새로 받아야 하는 경우에만 사용한다.
 - `POST /lectures/{lecture_id}/progress`는 `position_seconds`만 전달하는 재생 위치 하트비트이며 완료 처리에는 사용하지 않는다. 서버는 (사용자, 강의)별로 가장 최근 하트비트를 저장하고, 이후 `GET /lectures/{lecture_id}` 응답의 `my_playback.last_position_seconds`(그리고 `last_watched_at`, `completed`)에 노출한다. 클라이언트는 재진입 시 이 오프셋으로 시킹해 중단한 지점부터 이어본다. 완료 플래그·XP 지급·TOPIK 자동 승급 트리거는 오직 `POST /lectures/{lecture_id}/complete`가 담당한다. `complete`를 다시 호출해도 안전하며(멱등), 재호출 응답은 `already_completed=true`와 `xp_earned=0`을 반환한다.
@@ -423,14 +441,14 @@
 
 문장은 회화 트랙의 추천 콘텐츠 타입이며, 모든 추천은 **사용자의 회화 `current_level` 기준으로 AI가 생성**한다(4.18 참조). 북마크, 오디오 재생, 복습 완료 등의 이벤트는 회화 자동 승급 기준으로 사용된다.
 
-**모든 추천 문장은 해당 문장의 AI 생성 발음 오디오를 함께 포함한다.** 응답 페이로드에 중첩 `audio` 객체(서명된 CDN URL + 포맷 + 길이 + voice + `expires_at`)가 들어 있다. 클라이언트는 파일을 로컬에 캐시하고, 앱 내 재생(replay) 버튼은 캐시된 파일을 재생하므로 추가 API 호출이 없다.
+**모든 추천 문장은 해당 문장의 AI 생성 발음 오디오를 가진다.** 응답에는 가벼운 `audio` 메타데이터(`format`, `duration_ms`, `voice`)만 포함되며 **URL은 들어가지 않는다**. 전역 오디오 전달 정책(§3.5)에 따라 재생 가능한 URL은 `GET /sentences/{sentence_id}/audio`가 요청 시점에 발급한다. 클라이언트는 사용자가 처음 재생 버튼을 누를 때 이 엔드포인트를 호출하고 파일을 로컬 캐시한 뒤 이후 재생은 캐시된 파일을 재사용한다.
 
 **모든 추천 문장에는 사용자의 기본 언어로 번역된 의미도 함께 포함된다.** 각 `Sentence`는 `translation`(번역문)과 `translation_language`(BCP-47, `users.language`와 일치 — 예: `en`, `ja`, `zh-CN`)를 가진다. 사용자가 `users.language`를 변경하면 이후의 추천은 새 언어로 재생성된다.
 
 **읽기 플로우**
 
-1. 문장이 도착하면 클라이언트가 `audio`를 한 번 자동 재생한다.
-2. (선택) 사용자가 재생 버튼을 누르면 캐시된 파일을 다시 재생한다.
+1. 문장이 도착하면 클라이언트는 텍스트를 표시하고, 사용자가 처음 재생 버튼을 누르면 `GET /sentences/{sentence_id}/audio`로 오디오 URL을 받아 파일을 로컬에 캐시한다.
+2. (선택) 사용자가 재생 버튼을 다시 누르면 캐시된 파일을 재생한다.
 3. 사용자가 마이크 버튼을 누르고 화면의 문장(빈칸 포함)을 소리 내어 읽으면, 클라이언트가 녹음한 오디오를 `POST /sentences/{sentence_id}/speech-attempts`로 업로드한다.
 4. 서버가 ASR + 발음 평가를 기준 `korean` 텍스트와 비교해 다음을 반환한다:
    - `correct: bool`
@@ -462,7 +480,7 @@
 | `POST /sentences/{sentence_id}/bookmark` | 즐겨찾기 등록 — SavedSentence 레코드의 `favorite` 플래그 설정(§4.7.1) |
 | `DELETE /sentences/{sentence_id}/bookmark` | 즐겨찾기 해제 — `favorite` 플래그 제거. 멱등 `204 No Content`이며, `auto_wrong`이 남아 있으면 레코드는 유지됨 |
 | `POST /sentences/{sentence_id}/listen` | 오디오 재생 이벤트 기록(분석 + 자동 승급 신호) |
-| `GET /sentences/{sentence_id}/audio` | 서명된 오디오 URL 재발급(`expires_at` 이후용, 일반 재생은 캐시 사용) |
+| `GET /sentences/{sentence_id}/audio` | **서명된 오디오 URL의 유일한 발급처**(§3.5). 사용자의 첫 재생 탭과 TTL 만료 시 호출. 일반 재생은 캐시된 파일을 사용 |
 | `POST /sentences/{sentence_id}/speech-attempts` | 사용자의 읽기 녹음을 멀티파트 업로드 → 정오 판정·ASR 전사·발음 점수 반환 |
 
 **저장 문장 관련 엔드포인트** (전용 모듈 — 자세한 데이터 모델은 §4.7.1):
@@ -479,7 +497,7 @@
 **비즈니스 규칙**
 
 - 문장 `status`는 읽기 시도·노출 신호에 따라 `new → learning → mastered`로 이동.
-- 추천 문장에는 항상 `audio`(AI TTS)가 포함된다. 서명 URL TTL은 15분 이하이며, 클라이언트는 첫 수신 시 파일을 로컬에 캐시하고 재생 버튼은 캐시된 파일을 재사용한다. `expires_at` 이후에는 `GET /sentences/{sentence_id}/audio`로 새 URL을 재발급받는다.
+- 추천 문장은 항상 `audio` 메타데이터(AI TTS — `{format, duration_ms, voice}`)를 포함한다. **URL은 응답에 포함되지 않는다.** 재생 가능한 URL은 `GET /sentences/{sentence_id}/audio`(§3.5)가 발급하며, 서명 URL의 TTL은 15분 이하다. 클라이언트는 탭 시점에 URL을 받고 파일을 로컬 캐시한 뒤 이후 재생은 캐시된 파일을 사용한다. `expires_at` 이후 또는 캐시가 비는 경우에만 엔드포인트를 다시 호출한다.
 - **저장 버튼**은 추천 카드와 레슨 중 팝업(§4.6 `conversation_speak`)에서 동일한 동작을 수행하며, 모두 `POST /sentences/{sentence_id}/bookmark`를 호출한다. 이 호출은 (사용자, 문장) 단위 SavedSentence 레코드의 `favorite` 플래그를 설정하며(§4.7.1), 이전 자동 저장 상태와 무관하게 레코드가 중복 생성되지 않는다.
 - 모든 `Sentence`는 저장 목록 정렬과 복습 UI에 쓰이는 서버 관리 히스토리를 포함한다: `saved_at`(즐겨찾기 시점), `attempt_count`(총 speech-attempt 수), `incorrect_count`(오답 speech-attempt 수 — 한 번도 맞추지 못해도 계속 누적), `ever_answered_correctly`(불리언), `last_reviewed_at`(성공적인 speech-attempt·listen·저장 목록 재오픈 시 갱신). 즐겨찾기 → 해제 → 재즐겨찾기 사이클에서도 유지된다.
 - **저장 목록의 재생(연습) 플로우.** 저장 항목의 재생/연습 버튼은 단순 오디오 재생이 아니라 추천 문장 학습에서 사용하는 것과 동일한 연습 화면으로 이동한다. 화면은 `display_text`(빈칸 포함)와 캐시된 `audio`를 보여주고, 사용자가 마이크를 누르면 클라이언트는 **동일한** `POST /sentences/{sentence_id}/speech-attempts`를 호출한다. 서버는 기존 ASR + 발음 평가 파이프라인을 그대로 사용해 `correct` / `transcription` / `pronunciation_score` / `feedback_code`를 반환하고, 해당 문장의 사용자 히스토리(`attempt_count`, 실패 시 `incorrect_count`, 첫 성공 시 `ever_answered_correctly`, `last_attempted_at`, `last_reviewed_at`)와 `daily_sentence_goal`의 `daily_progress`까지 모두 갱신한다. 새로운 엔드포인트는 필요 없다.
@@ -504,7 +522,7 @@
 | `wrong_count` | 이 문장에 대한 오답 이벤트 누적 카운트. "오답 순" 정렬 기준 |
 | `last_viewed_at` | 사용자가 저장된 행을 마지막으로 연 시각. 최초에는 `null` — "가장 오래 안 본 순" 정렬이 한 번도 열지 않은 항목을 먼저 노출할 수 있는 근거 |
 | `created_at`, `updated_at` | 레코드 라이프사이클 타임스탬프. 모든 변경(새 오답, 즐겨찾기 토글, 열람, 필드 변경)마다 `updated_at` 갱신 |
-| `has_audio`, `audio_id` | 리스트 행은 가볍게 유지 — 플래그와 안정적인 오디오 핸들만 전달. 서명된 재생 URL은 상세 응답(또는 `GET /sentences/{id}/audio`)에 포함 |
+| `has_audio` | 리스트 행은 가볍게 유지 — 플래그만 전달. §3.5에 따라 별도의 audio_id는 없으며, 재생 URL은 행의 고유 `sentence_id`를 키로 `GET /sentences/{sentence_id}/audio`를 호출해 받는다 |
 
 상세 응답은 완전한 `Sentence`(서명된 `audio` URL, 문법 포인트, 예문, 빈칸, 사용자 히스토리 포함)와 함께 향후 릴리스를 위한 확장 필드 `tags`, `folder_id`, `priority`, `last_studied_at`, `sr_due_at`, `review_count`를 반환한다. 클라이언트는 추가 필드를 허용하도록 구현해야 한다 — 본 모델은 복습 이력, 폴더, 간격 반복(spaced repetition) 같은 기능을 breaking change 없이 확장 가능하도록 설계되어 있다.
 
@@ -545,6 +563,7 @@
 | `GET /quizzes?type=&level=` | 퀴즈 뱅크 |
 | `GET /quizzes/daily` | 오늘의 퀴즈 세트 |
 | `GET /quizzes/{quiz_id}` | 단일 문항 |
+| `GET /quizzes/{quiz_id}/audio` | 듣기 오디오 URL 발급(§3.5) — 사용자의 재생 탭 시점에 호출. `has_listening_audio=true`인 문항에만 의미 있음 |
 | `POST /quizzes/{quiz_id}/attempts` | 답안 제출 |
 | `GET /quizzes/{quiz_id}/attempts/{attempt_id}` | 과거 풀이 상세 |
 | `GET /quizzes/attempts/me` | 내 풀이 이력 |
@@ -886,7 +905,7 @@
 - `count` 기본값 5, 최대 20.
 - `/recommendations/questions` 결과 항목은 §4.8의 `QuizQuestion`과 동일 구조를 사용하며, 풀이는 퀴즈 풀이 엔드포인트로 제출한다.
 - `/recommendations/sentences` 결과 항목은 §4.7의 `Sentence`와 동일 구조를 사용하며 다음을 항상 포함한다:
-  - 중첩 `audio` 객체(AI TTS — 서명 URL + 포맷 + 길이 + `expires_at`). 클라이언트는 파일을 로컬에 캐시해 재생 버튼에서 재사용하며, 만료된 경우에만 `GET /sentences/{sentence_id}/audio`를 호출한다.
+  - 중첩 `audio` 메타데이터(AI TTS — `format`, `duration_ms`, `voice`; URL은 포함하지 않음, §3.5). 재생 가능한 URL은 사용자의 첫 탭 시점에 `GET /sentences/{sentence_id}/audio`로 조회하고, 클라이언트는 파일을 로컬에 캐시해 재생 버튼에서 재사용한다.
   - 사용자의 `users.language`로 번역된 `translation` + `translation_language`. 덕분에 UI는 한국어 문장과 번역을 추가 API 없이 같이 보여줄 수 있다.
 - 북마크·재생·읽기 시도 이벤트는 문장 엔드포인트로 전송된다.
 
