@@ -350,7 +350,8 @@
 | `GET /me/learning` | 내 트랙별 `current_level` |
 | `PATCH /me/learning/{track_id}` | 트랙의 `current_level`을 수동으로 변경 |
 | `GET /me/learning/events?type=level_up&cursor=` | 자동 승급 이력 |
-| `GET /learning/calendar?from=&to=` | 일일 학습 캘린더 |
+| `GET /learning/calendar?from=&to=` | 일일 학습 캘린더 — 범위 기반 원본 API |
+| `GET /learning/streak-calendar?year=&month=` | **연속 학습 캘린더 페이지 번들** — 현재/최장 연속 학습일수, 동기부여 배너 문구, 그리고 월 전체 격자(각 셀에 `studied`, `goal_achieved`, `is_today`)와 ‹ › 화살표용 `prev_month` / `next_month`까지 한 번에 반환. 파라미터 미지정 시 사용자의 로컬 오늘 날짜 기준 |
 | `GET /learning/stats?range=week\|month\|year\|all` | 차트용 집계 통계 |
 | `GET /lectures?track_id=&level=` | 특정 (트랙, 레벨)의 강의 목록 — 주로 TOPIK 보조 콘텐츠 |
 | `GET /lectures/{lecture_id}` | 강의 상세 |
@@ -403,6 +404,18 @@
 **"Exclude Speaking" 토글**
 
 레슨 화면 상단에는 `AppSettings.exclude_speaking`(§4.17 참조)에 연결된 "Exclude Speaking" 토글이 있다. 기본값은 **꺼짐(off)**. 사용자가 켜면(예: 소리 내기 곤란한 상황) 클라이언트는 이후 `kind="conversation_speak"` 팝업을 모두 숨긴다. `kind="topik_question"` 팝업은 토글과 무관하게 계속 노출된다. 서버는 전체 팝업 리스트를 그대로 반환하며, 필터링은 클라이언트에서 수행해 토글 변경 시 즉시 반영된다.
+
+**연속 학습 캘린더 페이지**
+
+연속 학습(스트릭) 캘린더 화면은 단일 번들 호출 — `GET /learning/streak-calendar?year=&month=` — 로 제공된다. 클라이언트는 파라미터 없이 호출하면 되고, 서버가 사용자의 로컬 "오늘"을 기준으로 기본 월을 결정한다. 이전 / 다음 화살표는 이전 응답의 `prev_month` / `next_month` 문자열을 그대로 넘겨 같은 엔드포인트를 다시 호출한다.
+
+응답은 1회 호출로 화면을 모두 그릴 수 있도록 구성된다.
+
+- **연속 학습일수 배너** — `current_streak`, `best_streak`, `last_study_date`, `freeze_tokens`와 함께, `tone ∈ {resting, first_day, building, on_fire, milestone}`, 다국어 매핑용 고정 키 `message_key`, 그리고 사용자의 `users.language`로 서버가 렌더링한 `message`를 담은 `motivation` 블록이 반환된다(예: *"You are shining with learning! Keep going for 2 days!"*). 톤 구간: `resting` = 연속 0일, `first_day` = 1일, `building` = 2~6일, `on_fire` = 7~29일, `milestone` = 30일 이상.
+- **월 격자** — `month.days[]`는 해당 월의 일자별 `StreakCalendarDay`를 오름차순으로 담는다. 각 항목은 `studied`(그 날의 모든 활동 여부), `goal_achieved`(일일 목표 달성 — 연속 학습일수 산정 조건), `is_today` 플래그를 포함한다. 클라이언트는 요일 기준으로 7열 격자에 배치한다. 오늘이 조회 중인 월에 속한 경우에 한해 월 단위 `today` 필드가 채워지므로 "오늘 강조" 셀을 쉽게 식별할 수 있다. `studied_days`와 `goal_achieved_days`는 상단 요약용으로 미리 집계되어 있다.
+- **네비게이션** — `prev_month`, `next_month`는 `YYYY-MM` 형식 문자열이다. 미래 월도 조회 가능하며, 활동 기록이 없으므로 `studied` / `goal_achieved`가 모두 false로 반환된다.
+
+`goal_achieved` 조건은 연속 학습일수(`streak_days`) 산정 기준과 동일하다 — 설정된 일일 목표(`daily_sentence_goal` 또는 `daily_question_goal`) 중 적어도 하나를 달성한 경우(§4.5). `studied`는 이와 별도로 "그 날 접속해서 학습을 했는지"만을 표시하므로, 목표를 달성하지 못한 날도 격자에 표시할 수 있다.
 
 ---
 

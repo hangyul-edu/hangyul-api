@@ -350,7 +350,8 @@ Users can also change `current_level` directly from Settings (see 4.17) — usef
 | `GET /me/learning` | My `current_level` per track. |
 | `PATCH /me/learning/{track_id}` | Manually update my `current_level` in a track. |
 | `GET /me/learning/events?type=level_up&cursor=` | Auto-promotion history. |
-| `GET /learning/calendar?from=&to=` | Daily study calendar. |
+| `GET /learning/calendar?from=&to=` | Daily study calendar — range primitive. |
+| `GET /learning/streak-calendar?year=&month=` | **Streak calendar page bundle** — current/best streak, motivational banner copy, and the full month grid (one cell per day with `studied`, `goal_achieved`, `is_today`) plus `prev_month` / `next_month` for the ‹ › arrows. Defaults to the caller's local today. |
 | `GET /learning/stats?range=week\|month\|year\|all` | Aggregated stats for charts. |
 | `GET /lectures?track_id=&level=` | List lectures for a (track, level). Lectures are a supplemental content type, primarily for TOPIK. |
 | `GET /lectures/{lecture_id}` | Lecture detail. |
@@ -403,6 +404,18 @@ Each popup has a stable `popup_id` for analytics and a `at_second` offset. The l
 **"Exclude Speaking" toggle**
 
 The top of the lesson screen shows an "Exclude Speaking" toggle bound to `AppSettings.exclude_speaking` (see §4.17). It defaults to **off**. When the user flips it on (e.g. they are somewhere they can't speak aloud), the client suppresses every `kind="conversation_speak"` popup for the rest of the lesson. `kind="topik_question"` popups continue to fire regardless. The server returns the full popup list; filtering happens client-side so the toggle reacts immediately without a refetch.
+
+**Streak calendar page**
+
+The continuous-learning / streak screen is served by a single bundled call — `GET /learning/streak-calendar?year=&month=`. Clients open the screen without parameters; the server resolves the caller's local today to pick the default month. Prev / next arrows re-call the same endpoint with the `prev_month` / `next_month` strings the previous response returned.
+
+The response is shaped for a stateless paint:
+
+- **Streak banner** — `current_streak`, `best_streak`, `last_study_date`, `freeze_tokens`, and a `motivation` block with `tone ∈ {resting, first_day, building, on_fire, milestone}`, a stable `message_key` for i18n lookup, and a server-rendered `message` in the caller's `users.language` (e.g. *"You are shining with learning! Keep going for 2 days!"*). Tone bands: `resting` = 0-day streak, `first_day` = 1, `building` = 2–6, `on_fire` = 7–29, `milestone` = 30+.
+- **Month grid** — `month.days[]` holds one `StreakCalendarDay` per calendar day in ascending date order. Each carries `studied` (any activity that day), `goal_achieved` (daily goal met — the streak-eligible condition), and `is_today`. The client lays the days into a 7-column grid by weekday. `today` at the month level is populated iff today falls inside the viewed month, so the "highlight today" cell is trivial to find. `studied_days` and `goal_achieved_days` are pre-tallied for the summary strip.
+- **Navigation** — `prev_month` and `next_month` are `YYYY-MM` strings. Future months are allowed; they simply come back with empty `studied`/`goal_achieved` flags.
+
+A `goal_achieved` day is the streak-eligible condition: hitting at least one configured daily goal (`daily_sentence_goal` *or* `daily_question_goal`) — matching the rule `streak_days` uses in §4.5. `studied` exists separately so the grid can mark "the user showed up" days even when the daily target wasn't met.
 
 ---
 
