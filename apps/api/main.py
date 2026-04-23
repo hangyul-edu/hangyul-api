@@ -21,7 +21,10 @@ from src.modules.notifications.presentation.router import router as notification
 from src.modules.onboarding.presentation.router import router as onboarding_router
 from src.modules.quizzes.presentation.router import router as quizzes_router
 from src.modules.recommendations.presentation.router import router as recommendations_router
-from src.modules.sentences.presentation.router import router as sentences_router
+from src.modules.sentences.presentation.router import (
+    router as sentences_router,
+    saved_sentences_router,
+)
 from src.modules.settings.presentation.router import router as settings_router
 from src.modules.social.presentation.router import feed_router, friends_router
 from src.modules.subscriptions.presentation.router import router as subscriptions_router
@@ -39,7 +42,7 @@ tags_metadata = [
     {"name": "subscriptions", "description": "Plan catalog, purchase, cancel, restore, purchase history."},
     {"name": "dashboard", "description": "Home dashboard snapshot: streak, goals, next track."},
     {"name": "learning", "description": "Tracks, levels, calendar, stats, lectures and playback."},
-    {"name": "sentences", "description": "Sentence study lists, bookmarks, audio, listen events."},
+    {"name": "sentences", "description": "Sentence study lists, saved sentences (auto + favorite), audio, listen events."},
     {"name": "quizzes", "description": "Daily quiz sets, multiple-choice / fill-blank / typing attempts."},
     {"name": "writing", "description": "Writing prompts and AI-graded submissions."},
     {"name": "ai-chat", "description": "한글AI conversational practice."},
@@ -94,6 +97,7 @@ app.include_router(learning_router)
 app.include_router(lectures_router)
 app.include_router(me_learning_router)
 app.include_router(sentences_router)
+app.include_router(saved_sentences_router)
 app.include_router(quizzes_router)
 app.include_router(writing_router)
 app.include_router(ai_chat_router)

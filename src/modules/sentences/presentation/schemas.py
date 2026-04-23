@@ -11,7 +11,17 @@ from src.common.api.progress import DailyProgress
 SentenceStatus = Literal["new", "learning", "mastered", "bookmarked"]
 AudioFormat = Literal["mp3", "wav", "aac", "opus"]
 SpeechFeedback = Literal["correct", "missed_words", "bad_pronunciation", "unclear_audio"]
-SavedSentenceSort = Literal["recent", "most_incorrect", "longest_not_reviewed"]
+
+# --- Saved-sentence taxonomy ---------------------------------------------------
+# `SaveType` is a *flag* set — one record can carry multiple reasons for being
+# saved. `SavedSource` records where the save originated (first wrong answer
+# location or the manual-favorite context). A record exists as long as at
+# least one SaveType flag is set; clearing the last flag deletes the row.
+
+SaveType = Literal["auto_wrong", "favorite"]
+SavedSource = Literal["lecture", "recommendation", "quiz_popup", "manual"]
+SavedSentenceSortKey = Literal["latest", "most_wrong", "least_recently_viewed"]
+SaveTypeFilter = Literal["all", "auto_wrong", "favorite"]
 
 
 class SentenceExample(BaseModel):
@@ -158,4 +168,185 @@ class SpeechAttemptResponse(BaseModel):
             "`correct` is true the server has already incremented `current`; clients update the "
             "on-screen counter directly from this field."
         ),
+    )
+
+
+# --- Saved sentences ----------------------------------------------------------
+# One `SavedSentence` per (user, sentence). The record carries a *set* of
+# `save_types` flags — "auto_wrong" (saved automatically after an incorrect
+# attempt) and/or "favorite" (user manually bookmarked). A sentence that is
+# first auto-saved and later favorited becomes a single record with both
+# flags set; there are never duplicate rows. Mobile list rows are lean
+# (no inline audio URL) — the detail endpoint resolves the signed URL.
+
+
+class SavedSentenceListItem(BaseModel):
+    sentence_id: str = Field(description="Canonical sentence id — also the saved record's key for the caller.")
+    korean: str = Field(description="Full Korean text (as shown in the list row).")
+    translation: str = Field(
+        description="Meaning of `korean`, rendered in the caller's `users.language`."
+    )
+    translation_language: str = Field(description="BCP-47 code of `translation` (mirrors `users.language`).")
+    level: int = Field(ge=1, le=10)
+
+    save_types: list[SaveType] = Field(
+        description=(
+            "Set of active save-type flags — the list is deduped and may carry one or both of "
+            "'auto_wrong' (saved by the system after a wrong attempt) and 'favorite' (manually "
+            "bookmarked by the user)."
+        ),
+    )
+    is_auto_saved: bool = Field(description="Convenience: `'auto_wrong' in save_types`.")
+    is_favorited: bool = Field(description="Convenience: `'favorite' in save_types`.")
+
+    sources: list[SavedSource] = Field(
+        default_factory=list,
+        description=(
+            "Where the auto-saves originated — any of 'lecture', 'recommendation', 'quiz_popup', "
+            "'manual'. A pure manual favorite carries just 'manual'; an auto-save from a lecture "
+            "popup carries 'lecture'; a record that was auto-saved first and then favorited may "
+            "carry both. Ordered by first-seen."
+        ),
+    )
+    primary_source: SavedSource | None = Field(
+        default=None,
+        description="The earliest source in `sources`; useful for a single-tag display on the list row.",
+    )
+
+    wrong_count: int = Field(
+        ge=0,
+        default=0,
+        description="Accumulated wrong-answer count across all attempt contexts. Drives the 'most_wrong' sort.",
+    )
+    last_viewed_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Most recent time the user opened / reviewed the saved sentence via "
+            "POST /saved-sentences/{id}/view. Null when never opened from the saved list — drives "
+            "'least_recently_viewed' sort (nulls surface first)."
+        ),
+    )
+    created_at: datetime = Field(description="When the saved record was first created.")
+    updated_at: datetime = Field(
+        description=(
+            "Timestamp of the most recent mutation to the record: a new wrong answer, a favorite "
+            "flag flip, a view, or any other state change. Drives the 'latest' sort."
+        ),
+    )
+
+    has_audio: bool = Field(
+        default=False,
+        description=(
+            "True when a TTS audio asset exists for this sentence. The list omits the signed URL to "
+            "stay lightweight; fetch it via GET /saved-sentences/{id} or GET /sentences/{id}/audio "
+            "when playback is needed."
+        ),
+    )
+    audio_id: str | None = Field(
+        default=None,
+        description="Stable audio resource id — opaque handle the client can re-use across URL refreshes.",
+    )
+
+
+class SavedSentenceCounts(BaseModel):
+    total: int = Field(ge=0, description="Records matching the caller's query (after `q` / `save_type` filter).")
+    auto_wrong: int = Field(ge=0, description="Records carrying the 'auto_wrong' flag (may overlap with 'favorite').")
+    favorite: int = Field(ge=0, description="Records carrying the 'favorite' flag.")
+    both: int = Field(ge=0, description="Records carrying both flags — useful for a 'merged' badge count.")
+
+
+class SavedSentencesPage(BaseModel):
+    items: list[SavedSentenceListItem]
+    next_cursor: str | None = None
+    has_more: bool = False
+    counts: SavedSentenceCounts = Field(
+        description=(
+            "Per-bucket counts for the current `q` search, ignoring the `save_type` filter — so the "
+            "UI can render the segmented-control badges (e.g. 'All 42 · Auto 31 · Favorites 18') "
+            "without a second round trip."
+        ),
+    )
+    sort: SavedSentenceSortKey
+    save_type: SaveTypeFilter
+    q: str | None = None
+
+
+class SavedSentenceDetail(SavedSentenceListItem):
+    """Detail response — extends the list item with the full `Sentence` payload + forward-compatible extension fields."""
+
+    sentence: Sentence = Field(
+        description=(
+            "Fully hydrated Sentence, including the signed `audio` URL, grammar points, examples, "
+            "and blanks. Use this to render the practice screen when the user taps a saved row."
+        ),
+    )
+    # Forward-compatible fields — reserved for future releases; always present (may be empty / null).
+    tags: list[str] = Field(default_factory=list, description="User-assigned tags (reserved for a future release).")
+    folder_id: str | None = Field(default=None, description="Folder this record belongs to (reserved for a future release).")
+    priority: int | None = Field(
+        default=None, description="User-assigned study priority, 1 = highest (reserved for a future release)."
+    )
+    last_studied_at: datetime | None = Field(
+        default=None,
+        description="Most recent study event (speech attempt, lesson re-watch, etc.) — decoupled from `last_viewed_at`.",
+    )
+    sr_due_at: datetime | None = Field(
+        default=None,
+        description="Next spaced-repetition due date (reserved for a future release).",
+    )
+    review_count: int = Field(
+        ge=0,
+        default=0,
+        description="Number of completed review events (reserved; starts at 0 in v1).",
+    )
+
+
+class WrongAnswerRequest(BaseModel):
+    sentence_id: str = Field(description="Sentence the user answered incorrectly.")
+    source: SavedSource = Field(
+        description=(
+            "Context of the wrong answer: 'lecture' (in-lesson modal), 'recommendation' "
+            "(recommendation card practice), 'quiz_popup' (TOPIK popup that referenced a sentence). "
+            "Pass 'manual' only for explicit client-driven saves with no specific context."
+        ),
+    )
+    lecture_id: str | None = Field(
+        default=None,
+        description="Populated when `source == 'lecture'` so analytics and the LRU screen can deep-link back.",
+    )
+    quiz_id: str | None = Field(default=None, description="Populated when `source == 'quiz_popup'`.")
+    occurred_at: datetime | None = Field(
+        default=None,
+        description="Client-supplied event timestamp (for offline sync); defaults to server time when omitted.",
+    )
+
+
+class WrongAnswerResponse(BaseModel):
+    sentence_id: str
+    created: bool = Field(
+        description="True iff this call created a new saved record; false when an existing record was updated."
+    )
+    wrong_count: int = Field(ge=0, description="`wrong_count` after this call (pre-existing count + 1).")
+    save_types: list[SaveType]
+    sources: list[SavedSource]
+    updated_at: datetime
+
+
+class SavedSentenceViewResponse(BaseModel):
+    sentence_id: str
+    last_viewed_at: datetime = Field(description="The timestamp just written.")
+    updated_at: datetime
+
+
+class SavedSentenceDeleteResponse(BaseModel):
+    sentence_id: str
+    record_deleted: bool = Field(
+        description=(
+            "True when the entire record was removed (no flags remained). False when only the "
+            "targeted flag was cleared and the record survives because another flag is still set "
+            "(e.g. clearing 'auto_wrong' on a record that is still favorited)."
+        ),
+    )
+    save_types: list[SaveType] = Field(
+        description="Flags still active on the record after this call. Empty when the record was deleted."
     )
